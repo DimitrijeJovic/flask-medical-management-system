@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-heading">
+    <div>
+        <p class="dashboard-kicker mb-1">Evidencija</p>
+        <h2>Dodaj pacijenta</h2>
+    </div>
+</div>
+
+<div class="form-panel">
+    <form method="POST" class="form-grid">
+        <div>
+            <label class="form-label">Ime</label>
+            <input class="form-control" name="ime" placeholder="Ime">
+        </div>
+        <div>
+            <label class="form-label">Prezime</label>
+            <input class="form-control" name="prezime" placeholder="Prezime">
+        </div>
+        <div>
+            <label class="form-label">JMBG</label>
+            <input class="form-control" name="jmbg" placeholder="JMBG">
+        </div>
+        <div>
+            <label class="form-label">Telefon</label>
+            <input class="form-control" name="telefon" placeholder="Telefon">
+        </div>
+
+        <div class="form-actions">
+            <a href="/patients" class="btn btn-outline-primary">Nazad</a>
+            <button class="btn btn-primary">Sacuvaj</button>
+        </div>
+    </form>
+</div>
+
+{% endblock %}

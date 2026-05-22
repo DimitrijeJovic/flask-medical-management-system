@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-heading">
+    <div>
+        <p class="dashboard-kicker mb-1">Organizacija rada</p>
+        <h2>Izmeni pregled</h2>
+    </div>
+</div>
+
+<div class="form-panel">
+    <form method="POST" class="form-grid">
+        <div>
+            <label class="form-label">Datum</label>
+            <input type="datetime-local" name="datum" class="form-control"
+                   value="{{ appointment.datum|replace(' ', 'T') }}">
+        </div>
+
+        <div>
+            <label class="form-label">Status</label>
+            <select name="status" class="form-select">
+                <option value="zakazano" {% if appointment.status == "zakazano" %}selected{% endif %}>Zakazano</option>
+                <option value="zavrseno" {% if appointment.status == "zavrseno" %}selected{% endif %}>Zavrseno</option>
+                <option value="otkazano" {% if appointment.status == "otkazano" %}selected{% endif %}>Otkazano</option>
+            </select>
+        </div>
+
+        <div class="form-actions">
+            <a href="/appointments" class="btn btn-outline-primary">Nazad</a>
+            <button class="btn btn-primary">Sacuvaj</button>
+        </div>
+    </form>
+</div>
+
+{% endblock %}

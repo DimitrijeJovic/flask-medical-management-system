@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-heading">
+    <div>
+        <p class="dashboard-kicker mb-1">Izvestaj pregleda</p>
+        <h2>Dodaj izvestaj</h2>
+    </div>
+</div>
+
+<div class="form-panel">
+    <form method="POST" class="form-stack">
+        <div>
+            <label class="form-label">Dijagnoza</label>
+            <textarea class="form-control" name="dijagnoza" rows="5" placeholder="Unesite dijagnozu"></textarea>
+        </div>
+
+        <div>
+            <label class="form-label">Terapija</label>
+            <textarea class="form-control" name="terapija" rows="5" placeholder="Unesite terapiju"></textarea>
+        </div>
+
+        <div class="form-actions">
+            <a href="/appointments" class="btn btn-outline-primary">Nazad</a>
+            <button class="btn btn-primary">Sacuvaj</button>
+        </div>
+    </form>
+</div>
+
+{% endblock %}

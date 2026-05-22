@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-heading">
+    <div>
+        <p class="dashboard-kicker mb-1">Karton pacijenta</p>
+        <h2>{{ patient.ime }} {{ patient.prezime }}</h2>
+    </div>
+    <a href="/patients" class="btn btn-outline-primary">Nazad na pacijente</a>
+</div>
+
+<div class="patient-record-layout">
+    <aside class="patient-profile-panel">
+        <div class="profile-avatar patient-avatar">
+            {{ patient.ime[:1]|upper }}{{ patient.prezime[:1]|upper }}
+        </div>
+
+        <div class="profile-info">
+            <span class="role-badge">Opsti karton</span>
+            <h3>{{ patient.ime }} {{ patient.prezime }}</h3>
+            <p>Pacijent u evidenciji doma zdravlja</p>
+        </div>
+
+        <div class="profile-meta">
+            <div>
+                <span>JMBG</span>
+                <strong>{{ patient.jmbg }}</strong>
+            </div>
+            <div>
+                <span>Telefon</span>
+                <strong>{{ patient.telefon if patient.telefon else "-" }}</strong>
+            </div>
+            <div>
+                <span>Nadlezni doktor</span>
+                <strong>{{ assigned_doctor.doctor_ime if assigned_doctor else "Nije dodeljen" }}</strong>
+            </div>
+            <div>
+                <span>Odeljenje</span>
+                <strong>{{ assigned_doctor.department_name if assigned_doctor and assigned_doctor.department_name else "Nije navedeno" }}</strong>
+            </div>
+        </div>
+
+        {% if session["role"] in ["admin","sestra"] %}
+        <div class="profile-actions">
+            <a href="/patients/edit/{{ patient.id }}" class="btn btn-light">Izmeni podatke</a>
+        </div>
+        {% endif %}
+    </aside>
+
+    <section class="reports-panel">
+        <div class="section-title">
+            <div>
+                <p class="dashboard-kicker mb-1">Izvestaji</p>
+                <h4>Istorija odradjenih termina</h4>
+            </div>
+            <span class="toolbar-note">Ukupno: {{ records|length }}</span>
+        </div>
+
+        <div class="reports-list">
+            {% for r in records %}
+            <article class="report-card">
+                <div class="report-card-header">
+                    <div>
+                        <span class="report-date">{{ r.datum }}</span>
+                        <h5>Izvestaj pregleda</h5>
+                    </div>
+                    <span class="status-pill status-zavrseno">Zavrseno</span>
+                </div>
+
+                <div class="report-meta">
+                    <span>Doktor: <strong>{{ r.doctor_ime }}</strong></span>
+                    <span>Odeljenje: <strong>{{ r.department_name if r.department_name else "Nije navedeno" }}</strong></span>
+                </div>
+
+                <div class="report-content">
+                    <div>
+                        <span>Dijagnoza</span>
+                        <p>{{ r.dijagnoza }}</p>
+                    </div>
+                    <div>
+                        <span>Terapija</span>
+                        <p>{{ r.terapija if r.terapija else "-" }}</p>
+                    </div>
+                </div>
+
+                {% if session["role"] == "doktor" %}
+                <div class="report-actions">
+                    <a class="btn btn-warning btn-sm" href="/medical/edit/{{r.id}}">Izmeni izvestaj</a>
+                    <a class="btn btn-danger btn-sm"
+                       href="/medical/delete/{{r.id}}"
+                       onclick="return confirm('Obrisati izvestaj?')">
+                       Obrisi
+                    </a>
+                </div>
+                {% endif %}
+            </article>
+            {% else %}
+            <div class="empty-state">
+                <h4>Nema izvestaja za prikaz.</h4>
+                <p>Izvestaji ce se pojaviti kada doktor zavrsi termin i unese dijagnozu i terapiju.</p>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+</div>
+
+{% endblock %}

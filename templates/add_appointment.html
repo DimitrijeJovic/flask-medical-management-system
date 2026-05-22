@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-heading">
+    <div>
+        <p class="dashboard-kicker mb-1">Organizacija rada</p>
+        <h2>Zakazi pregled</h2>
+    </div>
+</div>
+
+<div class="form-panel">
+    <form method="POST" class="form-grid">
+        <div>
+            <label class="form-label">Pacijent</label>
+            <select class="form-select" name="patient_id">
+            {% for p in patients %}
+            <option value="{{p.id}}">{{p.ime}} {{p.prezime}}</option>
+            {% endfor %}
+            </select>
+        </div>
+
+        <div>
+            <label class="form-label">Doktor</label>
+            <select class="form-select" name="doctor_id">
+            {% for d in doctors %}
+            <option value="{{d.id}}">{{d.ime}}</option>
+            {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-grid-wide">
+            <label class="form-label">Termin</label>
+            <input class="form-control" type="datetime-local" name="datum">
+        </div>
+
+        <div class="form-actions">
+            <a href="/appointments" class="btn btn-outline-primary">Nazad</a>
+            <button class="btn btn-primary">Zakazi</button>
+        </div>
+    </form>
+</div>
+
+{% endblock %}

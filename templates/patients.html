@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-heading">
+    <div>
+        <p class="dashboard-kicker mb-1">Evidencija</p>
+        <h2>Pacijenti</h2>
+    </div>
+
+    {% if session["role"] in ["admin","sestra"] %}
+    <a href="/patients/add" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Dodaj pacijenta</a>
+    {% endif %}
+</div>
+
+<div class="data-panel">
+    <div class="data-panel-toolbar">
+        <form method="GET" class="toolbar-form">
+            <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input class="form-control" name="search" placeholder="Pretraga pacijenata"
+                       value="{{ request.args.get('search', '') }}">
+            </div>
+        </form>
+        <span class="toolbar-note">Ukupno pacijenata: {{ total_patients }}</span>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Ime</th>
+                    <th>Prezime</th>
+                    <th>Telefon</th>
+                    <th>Akcija</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in patients %}
+                <tr>
+                    <td>{{ p.ime }}</td>
+                    <td>{{ p.prezime }}</td>
+                    <td>{{ p.telefon }}</td>
+                    <td>
+                        <div class="table-actions">
+                            <a class="btn btn-info btn-sm" href="/medical/{{p.id}}">Karton</a>
+
+                            {% if session["role"] in ["admin","sestra"] %}
+                            <a class="btn btn-warning btn-sm" href="/patients/edit/{{p.id}}">Izmeni</a>
+                            {% endif %}
+
+                            {% if session["role"] == "admin" %}
+                            <a class="btn btn-danger btn-sm" href="/patients/delete/{{p.id}}">Obrisi</a>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="4" class="text-center py-5">Nema pacijenata za prikaz.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="data-panel-footer">
+        <span>Strana {{ page }} od {{ total_pages }}</span>
+        <div class="pagination-buttons">
+            {% for page_number in range(1, total_pages + 1) %}
+            <a href="?page={{ page_number }}&search={{ request.args.get('search','') }}"
+               class="btn btn-sm {% if page_number == page %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                {{ page_number }}
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-heading">
+    <div>
+        <p class="dashboard-kicker mb-1">Organizacija rada</p>
+        <h2>Pregledi</h2>
+    </div>
+
+    {% if session["role"] == "sestra" %}
+    <a href="/appointments/add" class="btn btn-primary"><i class="bi bi-calendar-plus me-1"></i>Zakazi pregled</a>
+    {% endif %}
+</div>
+
+<div class="data-panel">
+    <div class="data-panel-toolbar">
+        <span class="toolbar-note">Pregled zakazanih, zavrsenih i otkazanih termina</span>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Pacijent</th>
+                    <th>Doktor</th>
+                    <th>Status</th>
+                    <th>Akcija</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in appointments %}
+                <tr>
+                    <td>{{ a.patient_ime }} {{ a.prezime }}</td>
+                    <td>{{ a.doctor_ime }}</td>
+                    <td>
+                        {% if a.status == "zavrseno" %}
+                            <span class="status-pill status-zavrseno">Zavrseno</span>
+                        {% elif a.status == "otkazano" %}
+                            <span class="status-pill status-otkazano">Otkazano</span>
+                        {% else %}
+                            <span class="status-pill status-zakazano">Zakazano</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="table-actions">
+                            {% if session["role"] in ["admin","doktor"] %}
+                            <a class="btn btn-warning btn-sm" href="/appointments/edit/{{a.id}}">Izmeni</a>
+                            {% endif %}
+
+                            {% if session["role"] == "doktor" %}
+                            <a class="btn btn-success btn-sm" href="/medical/add/{{a.id}}">Izvestaj</a>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="4" class="text-center py-5">Nema pregleda za prikaz.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% endblock %}

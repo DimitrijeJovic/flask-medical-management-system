@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+
+<section class="auth-shell">
+    <div class="auth-brand">
+        <div class="brand-mark brand-mark-lg"><i class="bi bi-person-plus"></i></div>
+        <p class="dashboard-kicker">Novi korisnik</p>
+        <h1>Kreiranje naloga za zaposlene</h1>
+        <p class="auth-copy">
+            Dodajte doktora, sestru ili administratora i omogucite pristup odgovarajucem panelu.
+        </p>
+
+        <div class="auth-highlights">
+            <div><i class="bi bi-person-vcard"></i><span>Uloge korisnika</span></div>
+            <div><i class="bi bi-hospital"></i><span>Medicinski tim</span></div>
+            <div><i class="bi bi-database-check"></i><span>Uredna evidencija</span></div>
+        </div>
+    </div>
+
+    <div class="auth-card">
+        <div class="auth-card-header">
+            <span class="auth-icon"><i class="bi bi-person-plus"></i></span>
+            <div>
+                <h2>Registracija</h2>
+                <p>Popunite podatke naloga</p>
+            </div>
+        </div>
+
+        <form method="POST">
+            <label class="form-label">Ime i prezime</label>
+            <input class="form-control form-control-lg" name="ime" placeholder="Ime i prezime" required>
+
+            <label class="form-label mt-3">Email adresa</label>
+            <input class="form-control form-control-lg" name="email" type="email" placeholder="ime@domzdravlja.rs" required>
+
+            <label class="form-label mt-3">Lozinka</label>
+            <input class="form-control form-control-lg" type="password" name="password" placeholder="Kreirajte lozinku" required>
+
+            <label class="form-label mt-3">Uloga</label>
+            <select class="form-select form-select-lg" name="role">
+                <option value="sestra">Sestra</option>
+                <option value="doktor">Doktor</option>
+                <option value="admin">Admin</option>
+            </select>
+
+            <button class="btn btn-primary btn-lg w-100 mt-4">Kreiraj nalog</button>
+        </form>
+
+        <div class="auth-footer">
+            Vec imate nalog?
+            <a href="/login">Nazad na login</a>
+        </div>
+    </div>
+</section>
+
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-heading">
+    <div>
+        <p class="dashboard-kicker mb-1">Izvestaj pregleda</p>
+        <h2>Izmeni izvestaj</h2>
+    </div>
+</div>
+
+<div class="form-panel">
+    <form method="POST" class="form-stack">
+        <div>
+            <label class="form-label">Dijagnoza</label>
+            <textarea class="form-control" name="dijagnoza" rows="5" required>{{ record.dijagnoza }}</textarea>
+        </div>
+
+        <div>
+            <label class="form-label">Terapija</label>
+            <textarea class="form-control" name="terapija" rows="5" required>{{ record.terapija }}</textarea>
+        </div>
+
+        <div class="form-actions">
+            <a href="/medical/{{ record.patient_id }}" class="btn btn-outline-primary">Nazad</a>
+            <button class="btn btn-primary">Sacuvaj izmene</button>
+        </div>
+    </form>
+</div>
+
+{% endblock %}

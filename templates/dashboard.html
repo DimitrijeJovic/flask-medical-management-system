@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% set role = session.get("role") %}
+{% set role_title = "Admin panel" if role == "admin" else ("Doktor panel" if role == "doktor" else "Sestra panel") %}
+{% set department = dashboard_user.department_name if dashboard_user and dashboard_user.department_name else "Opsta sluzba" %}
+
+<div class="dashboard-header mb-4">
+    <div>
+        <p class="dashboard-kicker mb-1">Dobrodosli nazad</p>
+        <h2 class="mb-0">{{ role_title }}</h2>
+    </div>
+    <div class="dashboard-clock" aria-label="Trenutno vreme">
+        <div class="clock-icon">
+            <i class="bi bi-clock-history"></i>
+        </div>
+        <div class="clock-content">
+            <span>Trenutno vreme</span>
+            <strong id="liveClock">--:--:--</strong>
+            <small id="liveDate">--</small>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 align-items-stretch dashboard-main">
+    <div class="col-lg-4">
+        <div class="profile-panel h-100">
+            <div class="profile-avatar">
+                {{ session.get("ime", "K")[:1]|upper }}
+            </div>
+
+            <div class="profile-info">
+                <span class="role-badge">{{ role_title }}</span>
+                <h3>{{ session.get("ime") }}</h3>
+                <p>{{ department }}</p>
+            </div>
+
+            <div class="profile-meta">
+                <div>
+                    <span>Uloga</span>
+                    <strong>{{ role }}</strong>
+                </div>
+                <div>
+                    <span>Email</span>
+                    <strong>{{ dashboard_user.email if dashboard_user else "-" }}</strong>
+                </div>
+            </div>
+
+            <div class="profile-actions">
+                {% if role == "doktor" %}
+                <a href="/appointments" class="btn btn-light">Moji pregledi</a>
+                <a href="/patients" class="btn btn-outline-light">Moji pacijenti</a>
+                {% elif role == "sestra" %}
+                <a href="/appointments/add" class="btn btn-light">Zakazi pregled</a>
+                <a href="/patients/add" class="btn btn-outline-light">Dodaj pacijenta</a>
+                {% else %}
+                <a href="/users" class="btn btn-light">Korisnici</a>
+                <a href="/patients/add" class="btn btn-outline-light">Dodaj pacijenta</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8 d-flex flex-column">
+        <div class="row g-3">
+            <div class="col-md-6 col-xl-3">
+                <div class="metric-card metric-green">
+                    <span>Zakazani</span>
+                    <strong>{{ status_counts.zakazano or 0 }}</strong>
+                    <small>aktivni pregledi</small>
+                </div>
+            </div>
+
+            <div class="col-md-6 col-xl-3">
+                <div class="metric-card metric-red">
+                    <span>Otkazani</span>
+                    <strong>{{ status_counts.otkazano or 0 }}</strong>
+                    <small>otkazani termini</small>
+                </div>
+            </div>
+
+            <div class="col-md-6 col-xl-3">
+                <div class="metric-card metric-blue">
+                    <span>Zavrseni</span>
+                    <strong>{{ status_counts.zavrseno or 0 }}</strong>
+                    <small>obavljeni pregledi</small>
+                </div>
+            </div>
+
+            <div class="col-md-6 col-xl-3">
+                <div class="metric-card metric-dark">
+                    <span>{% if role == "doktor" %}Moji pacijenti{% else %}Pacijenti{% endif %}</span>
+                    <strong>{{ my_patients_count }}</strong>
+                    <small>u evidenciji</small>
+                </div>
+            </div>
+        </div>
+
+        {% if role == "admin" %}
+        <div class="admin-strip mt-3">
+            <div>
+                <span>Ukupno pregleda</span>
+                <strong>{{ appointments_count }}</strong>
+            </div>
+            <div>
+                <span>Doktori</span>
+                <strong>{{ doctors_count }}</strong>
+            </div>
+            <div>
+                <span>Sestre</span>
+                <strong>{{ nurses_count }}</strong>
+            </div>
+            <div>
+                <span>Korisnici</span>
+                <strong>{{ users_count }}</strong>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="role-focus-grid mt-3">
+            {% if role == "doktor" %}
+            <a href="/appointments" class="focus-card">
+                <i class="bi bi-calendar2-check"></i>
+                <span>Danasnji pregledi</span>
+                <strong>{{ today_appointments_count }}</strong>
+            </a>
+            <a href="/patients" class="focus-card">
+                <i class="bi bi-clipboard2-pulse"></i>
+                <span>Moji izvestaji</span>
+                <strong>{{ reports_count }}</strong>
+            </a>
+            {% elif role == "sestra" %}
+            <a href="/appointments/add" class="focus-card">
+                <i class="bi bi-calendar-plus"></i>
+                <span>Zakazani buduci termini</span>
+                <strong>{{ upcoming_appointments_count }}</strong>
+            </a>
+            <a href="/patients" class="focus-card">
+                <i class="bi bi-telephone-x"></i>
+                <span>Pacijenti bez telefona</span>
+                <strong>{{ patients_missing_phone_count }}</strong>
+            </a>
+            {% else %}
+            <a href="/users" class="focus-card">
+                <i class="bi bi-person-badge"></i>
+                <span>Aktivni korisnici</span>
+                <strong>{{ users_count }}</strong>
+            </a>
+            <a href="/appointments" class="focus-card">
+                <i class="bi bi-activity"></i>
+                <span>Danas pregleda</span>
+                <strong>{{ today_appointments_count }}</strong>
+            </a>
+            {% endif %}
+        </div>
+
+        <div class="panel-section mt-3 flex-grow-1">
+            <div class="section-title">
+                <h4>Skori pregledi</h4>
+                <a href="/appointments">Pogledaj sve</a>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table dashboard-table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Pacijent</th>
+                            {% if role != "doktor" %}<th>Doktor</th>{% endif %}
+                            <th>Datum</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for appointment in recent_appointments %}
+                        <tr>
+                            <td>{{ appointment.patient_ime }} {{ appointment.prezime }}</td>
+                            {% if role != "doktor" %}<td>{{ appointment.doctor_ime }}</td>{% endif %}
+                            <td>{{ appointment.datum }}</td>
+                            <td><span class="status-pill status-{{ appointment.status }}">{{ appointment.status }}</span></td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="{% if role != 'doktor' %}4{% else %}3{% endif %}" class="text-center py-4">
+                                Nema pregleda za prikaz.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function updateDashboardClock() {
+    const clock = document.getElementById("liveClock");
+    const date = document.getElementById("liveDate");
+    if (!clock) return;
+
+    const now = new Date();
+    clock.textContent = now.toLocaleTimeString("sr-RS", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+    });
+
+    if (date) {
+        date.textContent = now.toLocaleDateString("sr-RS", {
+            weekday: "long",
+            day: "2-digit",
+            month: "long",
+            year: "numeric"
+        });
+    }
+}
+
+updateDashboardClock();
+setInterval(updateDashboardClock, 1000);
+</script>
+
+{% endblock %}
