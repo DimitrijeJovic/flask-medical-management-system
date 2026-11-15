@@ -1,3 +1,4 @@
+import os
 from math import ceil
 
 from flask import Flask, render_template, request, redirect, session, flash
@@ -6,7 +7,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from db import get_db_connection
 
 app = Flask(__name__)
-app.secret_key = "sifra"
+app.secret_key = os.environ.get("SECRET_KEY", "sifra")
 
 
 def login_required():
