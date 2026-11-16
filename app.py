@@ -270,7 +270,7 @@ def users():
     return render_template("users.html", users=users)
 
 
-@app.route("/users/delete/<int:id>")
+@app.route("/users/delete/<int:id>", methods=["GET", "POST"])
 def delete_user(id):
     if not role_required("admin"):
         return redirect("/login")
@@ -281,15 +281,18 @@ def delete_user(id):
 
     db = get_db_connection()
     cursor = db.cursor()
+    try:
+        cursor.execute("DELETE FROM appointments WHERE doctor_id = %s", (id,))
+        cursor.execute("DELETE FROM users WHERE id = %s", (id,))
+        db.commit()
+        flash("Korisnik uspesno obrisan!", "success")
+    except Exception as e:
+        db.rollback()
+        flash(f"Greška pri brisanju korisnika: {e}", "danger")
+    finally:
+        cursor.close()
+        db.close()
 
-    cursor.execute("DELETE FROM appointments WHERE doctor_id = %s", (id,))
-    cursor.execute("DELETE FROM users WHERE id = %s", (id,))
-    db.commit()
-
-    cursor.close()
-    db.close()
-
-    flash("Korisnik uspesno obrisan!", "success")
     return redirect("/users")
 
 
@@ -371,29 +374,40 @@ def add_patient():
         return redirect("/login")
 
     if request.method == "POST":
-        ime = request.form["ime"].strip()
-        prezime = request.form["prezime"].strip()
-        jmbg = request.form["jmbg"].strip()
-        telefon = request.form["telefon"].strip()
+        ime = request.form.get("ime", "").strip()
+        prezime = request.form.get("prezime", "").strip()
+        jmbg = request.form.get("jmbg", "").strip()
+        telefon = request.form.get("telefon", "").strip()
 
         if not ime or not prezime:
             flash("Ime i prezime su obavezni!", "danger")
             return redirect("/patients/add")
 
+        if not jmbg or len(jmbg) != 13 or not jmbg.isdigit():
+            flash("JMBG mora sadržati tačno 13 cifara!", "danger")
+            return redirect("/patients/add")
+
         db = get_db_connection()
         cursor = db.cursor()
 
-        cursor.execute("""
-            INSERT INTO patients (ime, prezime, jmbg, telefon)
-            VALUES (%s, %s, %s, %s)
-        """, (ime, prezime, jmbg, telefon))
-        db.commit()
-
-        cursor.close()
-        db.close()
-
-        flash("Pacijent uspesno dodat!", "success")
-        return redirect("/patients")
+        try:
+            cursor.execute("""
+                INSERT INTO patients (ime, prezime, jmbg, telefon)
+                VALUES (%s, %s, %s, %s)
+            """, (ime, prezime, jmbg, telefon))
+            db.commit()
+            flash("Pacijent uspesno dodat!", "success")
+            return redirect("/patients")
+        except Exception as e:
+            db.rollback()
+            if "Duplicate entry" in str(e) or "1062" in str(e):
+                flash("Pacijent sa unetim JMBG-om već postoji u evidenciji!", "danger")
+            else:
+                flash(f"Greška pri unosu pacijenta: {e}", "danger")
+            return redirect("/patients/add")
+        finally:
+            cursor.close()
+            db.close()
 
     return render_template("add_patient.html")
 
@@ -437,21 +451,24 @@ def edit_patient(id):
     return render_template("edit_patient.html", patient=patient)
 
 
-@app.route("/patients/delete/<int:id>")
+@app.route("/patients/delete/<int:id>", methods=["GET", "POST"])
 def delete_patient(id):
     if not role_required("admin"):
         return redirect("/patients")
 
     db = get_db_connection()
     cursor = db.cursor()
+    try:
+        cursor.execute("DELETE FROM patients WHERE id = %s", (id,))
+        db.commit()
+        flash("Pacijent uspesno obrisan!", "warning")
+    except Exception as e:
+        db.rollback()
+        flash(f"Greška pri brisanju pacijenta: {e}", "danger")
+    finally:
+        cursor.close()
+        db.close()
 
-    cursor.execute("DELETE FROM patients WHERE id = %s", (id,))
-    db.commit()
-
-    cursor.close()
-    db.close()
-
-    flash("Pacijent uspesno obrisan!", "warning")
     return redirect("/patients")
 
 
@@ -496,34 +513,48 @@ def add_appointment():
     if not role_required("sestra"):
         return redirect("/appointments")
 
+    if request.method == "POST":
+        patient_id = request.form.get("patient_id")
+        doctor_id = request.form.get("doctor_id")
+        datum = request.form.get("datum", "").strip()
+
+        if not patient_id or not doctor_id:
+            flash("Morate izabrati pacijenta i doktora!", "danger")
+            return redirect("/appointments/add")
+
+        if not datum:
+            flash("Morate uneti datum i vreme pregleda!", "danger")
+            return redirect("/appointments/add")
+
+        db = get_db_connection()
+        cursor = db.cursor()
+        try:
+            cursor.execute("""
+                INSERT INTO appointments (patient_id, doctor_id, datum)
+                VALUES (%s, %s, %s)
+            """, (patient_id, doctor_id, datum))
+            db.commit()
+            flash("Pregled uspesno zakazan!", "success")
+            return redirect("/appointments")
+        except Exception as e:
+            db.rollback()
+            flash(f"Greška pri zakazivanju: {e}", "danger")
+            return redirect("/appointments/add")
+        finally:
+            cursor.close()
+            db.close()
+
     db = get_db_connection()
     cursor = db.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM patients ORDER BY prezime, ime")
+        patients = cursor.fetchall()
 
-    if request.method == "POST":
-        patient_id = request.form["patient_id"]
-        doctor_id = request.form["doctor_id"]
-        datum = request.form["datum"]
-
-        cursor.execute("""
-            INSERT INTO appointments (patient_id, doctor_id, datum)
-            VALUES (%s, %s, %s)
-        """, (patient_id, doctor_id, datum))
-
-        db.commit()
+        cursor.execute("SELECT * FROM users WHERE role = 'doktor' ORDER BY ime")
+        doctors = cursor.fetchall()
+    finally:
         cursor.close()
         db.close()
-
-        flash("Pregled uspesno zakazan!", "success")
-        return redirect("/appointments")
-
-    cursor.execute("SELECT * FROM patients ORDER BY prezime, ime")
-    patients = cursor.fetchall()
-
-    cursor.execute("SELECT * FROM users WHERE role = 'doktor' ORDER BY ime")
-    doctors = cursor.fetchall()
-
-    cursor.close()
-    db.close()
 
     return render_template("add_appointment.html", patients=patients, doctors=doctors)
 
@@ -669,68 +700,74 @@ def add_medical_record(appointment_id):
 
 @app.route("/medical/edit/<int:id>", methods=["GET", "POST"])
 def edit_medical_record(id):
-    if not role_required("doktor"):
+    if not role_required("doktor", "admin"):
         return redirect("/patients")
 
     db = get_db_connection()
     cursor = db.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM medical_records WHERE id = %s", (id,))
+        record = cursor.fetchone()
 
-    cursor.execute("SELECT * FROM medical_records WHERE id = %s", (id,))
-    record = cursor.fetchone()
+        if not record:
+            flash("Izvestaj nije pronadjen.", "danger")
+            return redirect("/patients")
 
-    if not record:
+        if session.get("role") != "admin" and record.get("doctor_id") != session.get("user_id"):
+            flash("Nemate dozvolu za izmenu tuđeg lekarskog izveštaja.", "danger")
+            return redirect(f"/medical/{record['patient_id']}")
+
+        if request.method == "POST":
+            dijagnoza = request.form.get("dijagnoza", "").strip()
+            terapija = request.form.get("terapija", "").strip()
+
+            if not dijagnoza:
+                flash("Dijagnoza ne može biti prazna!", "danger")
+                return render_template("edit_medical.html", record=record)
+
+            cursor.execute("""
+                UPDATE medical_records
+                SET dijagnoza = %s, terapija = %s
+                WHERE id = %s
+            """, (dijagnoza, terapija, id))
+            db.commit()
+
+            flash("Izvestaj izmenjen!", "success")
+            return redirect(f"/medical/{record['patient_id']}")
+
+        return render_template("edit_medical.html", record=record)
+    finally:
         cursor.close()
         db.close()
-        flash("Izvestaj nije pronadjen.", "danger")
-        return redirect("/patients")
-
-    if request.method == "POST":
-        dijagnoza = request.form["dijagnoza"]
-        terapija = request.form["terapija"]
-
-        cursor.execute("""
-            UPDATE medical_records
-            SET dijagnoza = %s, terapija = %s
-            WHERE id = %s
-        """, (dijagnoza, terapija, id))
-
-        db.commit()
-        cursor.close()
-        db.close()
-
-        flash("Izvestaj izmenjen!", "success")
-        return redirect(f"/medical/{record['patient_id']}")
-
-    cursor.close()
-    db.close()
-
-    return render_template("edit_medical.html", record=record)
 
 
-@app.route("/medical/delete/<int:id>")
+@app.route("/medical/delete/<int:id>", methods=["GET", "POST"])
 def delete_medical_record(id):
-    if not role_required("doktor"):
+    if not role_required("doktor", "admin"):
         return redirect("/patients")
 
     db = get_db_connection()
     cursor = db.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM medical_records WHERE id = %s", (id,))
+        record = cursor.fetchone()
 
-    cursor.execute("SELECT * FROM medical_records WHERE id = %s", (id,))
-    record = cursor.fetchone()
+        if not record:
+            flash("Izvestaj nije pronadjen.", "danger")
+            return redirect("/patients")
 
-    if not record:
+        if session.get("role") != "admin" and record.get("doctor_id") != session.get("user_id"):
+            flash("Nemate dozvolu za brisanje tuđeg lekarskog izveštaja.", "danger")
+            return redirect(f"/medical/{record['patient_id']}")
+
+        cursor.execute("DELETE FROM medical_records WHERE id = %s", (id,))
+        db.commit()
+
+        flash("Izvestaj obrisan!", "danger")
+        return redirect(f"/medical/{record['patient_id']}")
+    finally:
         cursor.close()
         db.close()
-        return redirect("/patients")
-
-    cursor.execute("DELETE FROM medical_records WHERE id = %s", (id,))
-    db.commit()
-
-    cursor.close()
-    db.close()
-
-    flash("Izvestaj obrisan!", "danger")
-    return redirect(f"/medical/{record['patient_id']}")
 
 
 if __name__ == "__main__":

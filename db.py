@@ -1,11 +1,22 @@
 import os
-import mysql.connector
+
+try:
+    import mysql.connector
+except ImportError:
+    mysql = None
+
 
 def get_db_connection():
+    if mysql is None:
+        raise RuntimeError(
+            "mysql-connector-python is not installed. "
+            "Please install it with 'pip install -r requirements.txt'."
+        )
+
     return mysql.connector.connect(
         host=os.environ.get("DB_HOST", "127.0.0.1"),
         user=os.environ.get("DB_USER", "root"),
         password=os.environ.get("DB_PASSWORD", "root"),
         database=os.environ.get("DB_NAME", "dom_zdravlja_v1"),
-        port=int(os.environ.get("DB_PORT", "3306"))
+        port=int(os.environ.get("DB_PORT", "3306")),
     )

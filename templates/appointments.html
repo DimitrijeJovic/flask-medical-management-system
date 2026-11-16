@@ -23,6 +23,7 @@
                 <tr>
                     <th>Pacijent</th>
                     <th>Doktor</th>
+                    <th>Datum i vreme</th>
                     <th>Status</th>
                     <th>Akcija</th>
                 </tr>
@@ -32,6 +33,7 @@
                 <tr>
                     <td>{{ a.patient_ime }} {{ a.prezime }}</td>
                     <td>{{ a.doctor_ime }}</td>
+                    <td><span class="text-nowrap">{{ a.datum }}</span></td>
                     <td>
                         {% if a.status == "zavrseno" %}
                             <span class="status-pill status-zavrseno">Zavrseno</span>
@@ -55,7 +57,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="4" class="text-center py-5">Nema pregleda za prikaz.</td>
+                    <td colspan="5" class="text-center py-5">Nema pregleda za prikaz.</td>
                 </tr>
                 {% endfor %}
             </tbody>

@@ -30,6 +30,7 @@
                 <tr>
                     <th>Ime</th>
                     <th>Prezime</th>
+                    <th>JMBG</th>
                     <th>Telefon</th>
                     <th>Akcija</th>
                 </tr>
@@ -39,7 +40,8 @@
                 <tr>
                     <td>{{ p.ime }}</td>
                     <td>{{ p.prezime }}</td>
-                    <td>{{ p.telefon }}</td>
+                    <td><span class="font-monospace text-muted">{{ p.jmbg }}</span></td>
+                    <td>{{ p.telefon if p.telefon else "-" }}</td>
                     <td>
                         <div class="table-actions">
                             <a class="btn btn-info btn-sm" href="/medical/{{p.id}}">Karton</a>
@@ -56,7 +58,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="4" class="text-center py-5">Nema pacijenata za prikaz.</td>
+                    <td colspan="5" class="text-center py-5">Nema pacijenata za prikaz.</td>
                 </tr>
                 {% endfor %}
             </tbody>

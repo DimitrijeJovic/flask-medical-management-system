@@ -83,7 +83,7 @@
                     </div>
                 </div>
 
-                {% if session["role"] == "doktor" %}
+                {% if (session["role"] == "doktor" and r.doctor_id == session["user_id"]) or session["role"] == "admin" %}
                 <div class="report-actions">
                     <a class="btn btn-warning btn-sm" href="/medical/edit/{{r.id}}">Izmeni izvestaj</a>
                     <a class="btn btn-danger btn-sm"
