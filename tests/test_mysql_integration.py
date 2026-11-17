@@ -1,7 +1,21 @@
+"""
+Real MySQL integration tests.
+
+These tests need a MySQL 8 server. They use, in order:
+  1. a server already listening on DB_HOST:DB_PORT (default 127.0.0.1:3306), or
+  2. a throwaway server started from the binary named in MYSQLD_BIN (or `mysqld` on PATH),
+     with its data directory under the system temp folder.
+If neither is available, every test in this module is reported as SKIPPED, never as passed.
+
+All work happens in the database named by MYSQL_TEST_DB (default dom_zdravlja_integration_test).
+Its tables are truncated before each test, so the name must contain "test".
+"""
 import os
 import sys
 import time
+import shutil
 import socket
+import tempfile
 import unittest
 import threading
 import subprocess
@@ -35,17 +49,25 @@ class MySQLServerManager:
     host = os.environ.get("DB_HOST", "127.0.0.1")
     user = os.environ.get("DB_USER", "root")
     password = os.environ.get("DB_PASSWORD", "")
-    db_name = "dom_zdravlja_integration_test"
-    data_dir = os.path.join(os.environ.get("TEMP", "C:\\Temp"), "mysql_integration_test_data")
-    mysqld_bin = r"C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqld.exe"
+    db_name = os.environ.get("MYSQL_TEST_DB", "dom_zdravlja_integration_test")
+    data_dir = os.path.join(tempfile.gettempdir(), "mysql_integration_test_data")
+    mysqld_bin = os.environ.get("MYSQLD_BIN") or shutil.which("mysqld")
 
     @classmethod
     def start_if_needed(cls):
+        if "test" not in cls.db_name.lower():
+            raise RuntimeError(
+                f"Refusing to run: MYSQL_TEST_DB '{cls.db_name}' must contain 'test' because its tables are truncated."
+            )
+
         if is_port_open(cls.host, cls.port):
             return
 
-        if not os.path.exists(cls.mysqld_bin):
-            raise RuntimeError(f"MySQL binary not found at {cls.mysqld_bin}")
+        if not cls.mysqld_bin or not os.path.exists(cls.mysqld_bin):
+            raise unittest.SkipTest(
+                f"No MySQL server on {cls.host}:{cls.port} and no mysqld binary found. "
+                "Start a MySQL 8 server or set MYSQLD_BIN to the mysqld executable."
+            )
 
         # Initialize data directory if not already initialized
         if not os.path.exists(cls.data_dir) or not os.listdir(cls.data_dir):
@@ -79,6 +101,17 @@ class MySQLServerManager:
     @classmethod
     def stop(cls):
         if cls._proc and cls._started_by_suite:
+            # On Windows, mysqld runs as a monitor process plus a server child; terminating the
+            # monitor orphans the child. A SQL SHUTDOWN stops both.
+            try:
+                conn = mysql.connector.connect(host=cls.host, port=cls.port, user=cls.user, password=cls.password)
+                conn.cursor().execute("SHUTDOWN")
+                conn.close()
+            except Exception:
+                pass
+            deadline = time.time() + 15.0
+            while time.time() < deadline and is_port_open(cls.host, cls.port):
+                time.sleep(0.5)
             try:
                 cls._proc.terminate()
                 cls._proc.wait(timeout=5)
@@ -141,12 +174,19 @@ class MySQLServerManager:
 class TestMySQLIntegration(unittest.TestCase):
     """
     Real MySQL Integration & Concurrency Test Suite.
-    Executes against isolated database 'dom_zdravlja_integration_test' on local MySQL 8.0.46.
+    Executes against the isolated database named by MYSQL_TEST_DB (see the module docstring).
     """
+
+    skip_reason = None
 
     @classmethod
     def setUpClass(cls):
-        MySQLServerManager.start_if_needed()
+        try:
+            MySQLServerManager.start_if_needed()
+        except unittest.SkipTest as exc:
+            # Recorded here and raised per test in setUp, so each test is reported as skipped.
+            cls.skip_reason = str(exc)
+            return
         MySQLServerManager.init_database()
 
         # Configure environment for Flask application to point to the isolated test database
@@ -177,6 +217,8 @@ class TestMySQLIntegration(unittest.TestCase):
         )
 
     def setUp(self):
+        if self.skip_reason:
+            self.skipTest(self.skip_reason)
         self.client = app.test_client()
 
         # Clean tables in dependency order

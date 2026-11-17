@@ -892,6 +892,26 @@ class MedicalSystemSecurityTestCase(unittest.TestCase):
             logged_messages = " ".join(log_capture.output)
             self.assertNotIn("private.nurse.email@domzdravlja.rs", logged_messages, "Log must not contain user email")
 
+    @patch("app.get_db_connection")
+    def test_login_post_rate_limited_after_five_attempts_per_minute(self, mock_db_conn):
+        """Sixth login POST from one address within a minute must be rejected with 429; GET is not limited."""
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = None  # unknown user: every attempt fails authentication
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_db_conn.return_value = mock_conn
+
+        medical_app.limiter.reset()
+        self.addCleanup(medical_app.limiter.reset)
+
+        credentials = {"email": "unknown@domzdravlja.rs", "password": "WrongPassword1!"}
+        for attempt in range(5):
+            response = self.client.post("/login", data=credentials)
+            self.assertNotEqual(response.status_code, 429, f"Attempt {attempt + 1} must not be rate limited")
+
+        self.assertEqual(self.client.post("/login", data=credentials).status_code, 429)
+        self.assertEqual(self.client.get("/login").status_code, 200)
+
 
 if __name__ == "__main__":
     unittest.main()

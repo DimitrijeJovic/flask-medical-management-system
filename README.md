@@ -1,16 +1,22 @@
-# Healthcare Management System (Dom Zdravlja)
+# Clinic Management System (Dom Zdravlja): Academic Flask Project
 
-A secure, role-based outpatient healthcare and clinical management web application built with Python, Flask, MySQL, and Bootstrap 5.
+An academic web application for a fictional outpatient clinic, built with Python, Flask, MySQL, and Bootstrap 5. I developed it for an exam in a university course; it was one of my first independently built programming projects, and I learned application development by building it.
 
-Developed to demonstrate enterprise-grade web development patterns: relational database modeling, role-based and relationship-based access control (RBAC & ReBAC), application-level cascade deletion safeguards, longitudinal medical record retention, server-side session invalidation, and defensive security hardening against OWASP Top 10 vulnerabilities.
+**It is a learning project, not a medical product.** It has never been deployed, has never held real patient data, and is not used by any clinic, patient, or medical staff.
+
+What it shows:
+- **First version (May 2026):** my own Flask application with a hand-designed MySQL schema, server-rendered pages, and role-based pages for administrators, doctors, and nurses.
+- **Later improvements (November 2026, AI-assisted):** a review found serious security problems in that first version (anyone could register as an administrator, any staff member could read any medical record, deletes over GET, no CSRF protection). I directed the fixes, had them reviewed independently, and added unit tests and integration tests against a real MySQL database. See [docs/SECURITY.md](docs/SECURITY.md).
+
+Further documentation: [Architecture](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md) · [Testing](docs/TESTING.md)
 
 ---
 
-## 1. Problem Statement
+## 1. Problem Statement (as modelled in the project)
 
-Outpatient health centers and primary care clinics require strict compartmentalization of administrative, medical, and nursing functions. Unrestricted record access or accidental administrative deletions can lead to severe privacy breaches or irreversible clinical data loss.
+A clinic needs to separate administrative, medical, and nursing work. Unrestricted access to records or careless deletions would expose private data or destroy clinical history.
 
-This system provides a centralized clinical workflow portal ensuring:
+The application models these rules:
 - Medical history cannot be permanently deleted by any user or administrator.
 - Clinical notes are accessible exclusively to doctors with an active or historical professional relationship with the patient.
 - Administrative operations cannot alter diagnostic findings or compromise relational integrity.
@@ -53,8 +59,8 @@ The application strictly separates responsibilities across three distinct staff 
 - **Database & Engine:** MySQL 8.0 (InnoDB storage engine, foreign key constraints)
 - **Database Connector:** `mysql-connector-python` using parameterized queries exclusively
 - **Frontend & Styling:** Jinja2 dynamic templates, HTML5, CSS3, Bootstrap 5, Bootstrap Icons
-- **Production Entrypoint:** WSGI (`wsgi.py`) with Gunicorn support and configurable ProxyFix
-- **Testing Suite:** Python `unittest` suite (48 automated regression, security invariant, and real MySQL concurrency tests)
+- **WSGI Entry Point:** `wsgi.py` with configurable ProxyFix (prepared for a WSGI server such as Gunicorn; never deployed)
+- **Testing:** Python `unittest`: 39 unit and security regression tests (mocked database) and 10 integration tests against a real MySQL 8 server
 
 ---
 
@@ -176,8 +182,8 @@ python app.py
 ```
 Open `http://127.0.0.1:5000` in your browser.
 
-### Production WSGI Mode
-Run using a WSGI server (e.g., Gunicorn on Linux):
+### WSGI Mode
+The project has never been deployed. `wsgi.py` shows how it would be started under a WSGI server (e.g., Gunicorn on Linux, which is not included in `requirements.txt`):
 ```bash
 gunicorn wsgi:app --workers 4 --bind 127.0.0.1:5000
 ```
@@ -187,14 +193,16 @@ gunicorn wsgi:app --workers 4 --bind 127.0.0.1:5000
 
 ## 9. Running Tests
 
-Run the complete automated test discovery (all 48 tests):
+Run both suites:
 ```bash
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
+The integration suite needs a MySQL 8 server: either one already listening on `DB_HOST:DB_PORT`, or a `mysqld` binary named by `MYSQLD_BIN` (or on `PATH`), from which the suite starts and stops a throwaway server. Without either, its 10 tests are reported as skipped (`OK (skipped=10)`). Details and safety rules: [docs/TESTING.md](docs/TESTING.md).
+
 ### Test Suites:
 
-1. **Unit & Security Regression Suite (`tests/test_app.py` — 38 Tests):**
+1. **Unit & Security Regression Suite (`tests/test_app.py`, 39 tests):**
    ```bash
    python -m unittest tests.test_app
    ```
@@ -206,8 +214,9 @@ python -m unittest discover -s tests -p "test_*.py"
    - Database session revalidation and demotion/deletion revocation.
    - Row-locking (`FOR UPDATE`) in appointment mutations.
    - CSRF validation, WSGI startup secrets, and logging privacy.
+   - Login rate limiting (sixth POST within a minute returns 429).
 
-2. **Real MySQL Integration & Concurrency Suite (`tests/test_mysql_integration.py` — 10 Tests):**
+2. **Real MySQL Integration & Concurrency Suite (`tests/test_mysql_integration.py`, 10 tests):**
    ```bash
    python -m unittest tests.test_mysql_integration
    ```
@@ -223,21 +232,12 @@ python -m unittest discover -s tests -p "test_*.py"
 
 ---
 
-## 10. Known Limitations & Production Considerations
+## 10. Known Limitations
+
+These would matter if the application were ever run beyond local study:
+
 
 1. **In-Memory Rate Limiting:** Flask-Limiter uses `memory://` by default. For multi-process or clustered production deployments, set `RATELIMIT_STORAGE_URI=redis://localhost:6379/0` to enforce rate limits across workers.
 2. **Database Concurrency Isolation:** Multi-connection row locking (`SELECT ... FOR UPDATE`) and race condition serialization have been positively verified against local MySQL 8.0 Community Server (InnoDB). Production environments should ensure InnoDB default `REPEATABLE READ` or `SERIALIZABLE` isolation.
-3. **Foreign Key DDL vs Application Guard:** The underlying `schema.sql` retains `ON DELETE CASCADE` on historical foreign keys. While application routes strictly prevent cascade triggers by blocking doctor and patient deletions, direct manual SQL executions outside the application would cascade. A future migration to `ON DELETE RESTRICT` is recommended for enterprise setups.
-
----
-
-## 11. Screenshots
-
-*(Screenshots will be captured and added following staging deployment)*
-
-| View | Description | Placeholder |
-|---|---|---|
-| **Admin Dashboard** | Clinic statistics, department overviews, staff management | `[ Screenshot: Admin Dashboard ]` |
-| **Doctor Consultation Queue** | Assigned patient list, status controls, medical history link | `[ Screenshot: Doctor Queue ]` |
-| **Electronic Medical Record** | Longitudinal consultation notes, diagnoses, and prescriptions | `[ Screenshot: Patient EMR ]` |
-| **Appointment Scheduling** | Nurse booking portal with doctor and patient selection | `[ Screenshot: Scheduling Modal ]` |
+3. **Foreign Key DDL vs Application Guard:** The underlying `schema.sql` retains `ON DELETE CASCADE` on historical foreign keys. While application routes strictly prevent cascade triggers by blocking doctor and patient deletions, direct manual SQL executions outside the application would cascade. A future migration to `ON DELETE RESTRICT` is recommended.
+4. **No screenshots yet:** the user interface is in Serbian and has not been captured for this README.
