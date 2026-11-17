@@ -13,10 +13,17 @@ def get_db_connection():
             "Please install it with 'pip install -r requirements.txt'."
         )
 
+    # In non-testing environments, database credentials must be provided via environment variables
+    db_host = os.environ.get("DB_HOST", "127.0.0.1")
+    db_user = os.environ.get("DB_USER", "root")
+    db_password = os.environ.get("DB_PASSWORD", "")
+    db_name = os.environ.get("DB_NAME", "dom_zdravlja_v1")
+    db_port = int(os.environ.get("DB_PORT", "3306"))
+
     return mysql.connector.connect(
-        host=os.environ.get("DB_HOST", "127.0.0.1"),
-        user=os.environ.get("DB_USER", "root"),
-        password=os.environ.get("DB_PASSWORD", "root"),
-        database=os.environ.get("DB_NAME", "dom_zdravlja_v1"),
-        port=int(os.environ.get("DB_PORT", "3306")),
+        host=db_host,
+        user=db_user,
+        password=db_password,
+        database=db_name,
+        port=db_port,
     )

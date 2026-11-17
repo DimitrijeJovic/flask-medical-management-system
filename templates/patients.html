@@ -44,14 +44,19 @@
                     <td>{{ p.telefon if p.telefon else "-" }}</td>
                     <td>
                         <div class="table-actions">
+                            {% if session.get("role") != "sestra" %}
                             <a class="btn btn-info btn-sm" href="/medical/{{p.id}}">Karton</a>
+                            {% endif %}
 
                             {% if session["role"] in ["admin","sestra"] %}
                             <a class="btn btn-warning btn-sm" href="/patients/edit/{{p.id}}">Izmeni</a>
                             {% endif %}
 
                             {% if session["role"] == "admin" %}
-                            <a class="btn btn-danger btn-sm" href="/patients/delete/{{p.id}}">Obrisi</a>
+                            <form method="POST" action="/patients/delete/{{p.id}}" style="display:inline;" onsubmit="return confirm('Da li ste sigurni da želite da obrišete pacijenta?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-danger btn-sm">Obrisi</button>
+                            </form>
                             {% endif %}
                         </div>
                     </td>

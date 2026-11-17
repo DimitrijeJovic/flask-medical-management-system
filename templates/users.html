@@ -1,10 +1,15 @@
 {% extends "base.html" %}
 {% block content %}
 
-<div class="page-heading">
+<div class="page-heading d-flex justify-content-between align-items-center">
     <div>
         <p class="dashboard-kicker mb-1">Administracija</p>
         <h2>Korisnici</h2>
+    </div>
+    <div>
+        <a href="/users/add" class="btn btn-primary">
+            <i class="bi bi-person-plus me-1"></i> Novi korisnik
+        </a>
     </div>
 </div>
 
@@ -20,6 +25,7 @@
                     <th>ID</th>
                     <th>Ime</th>
                     <th>Email</th>
+                    <th>Odeljenje</th>
                     <th>Rola</th>
                     <th>Akcija</th>
                 </tr>
@@ -30,22 +36,26 @@
                     <td>{{ u.id }}</td>
                     <td>{{ u.ime }}</td>
                     <td>{{ u.email }}</td>
+                    <td>{{ u.department_name or '-' }}</td>
                     <td>
                         <span class="badge bg-{% if u.role=='admin' %}danger{% elif u.role=='doktor' %}primary{% else %}success{% endif %}">
                         {{ u.role }}
                         </span>
                     </td>
                     <td>
-                        <a href="/users/delete/{{u.id}}"
-                           class="btn btn-danger btn-sm"
-                           onclick="return confirm('Obrisati korisnika?')">
-                           Obrisi
-                        </a>
+                        {% if u.id != session.get('user_id') %}
+                        <form method="POST" action="/users/delete/{{ u.id }}" style="display:inline;" onsubmit="return confirm('Da li ste sigurni da želite da obrišete ovog korisnika?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-danger btn-sm">Obrisi</button>
+                        </form>
+                        {% else %}
+                        <span class="text-muted small">Trenutni nalog</span>
+                        {% endif %}
                     </td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="5" class="text-center py-5">Nema korisnika za prikaz.</td>
+                    <td colspan="6" class="text-center py-5">Nema korisnika za prikaz.</td>
                 </tr>
                 {% endfor %}
             </tbody>

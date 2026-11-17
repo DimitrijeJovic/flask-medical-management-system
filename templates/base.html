@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 
-<body class="{% if request.path in ['/login', '/register'] %}auth-page{% endif %}">
+<body class="{% if request.path == '/login' %}auth-page{% endif %}">
 
 <div class="toast-container position-fixed top-0 end-0 p-3">
 {% with messages = get_flashed_messages(with_categories=true) %}
@@ -31,7 +31,7 @@
 {% endwith %}
 </div>
 
-{% if request.path not in ['/login', '/register'] %}
+{% if request.path != '/login' %}
 <nav class="navbar navbar-expand-lg app-navbar">
   <div class="container">
     <a class="navbar-brand" href="/">
@@ -76,23 +76,26 @@
             <span>{{ session.get("ime") }} <small>{{ session.get("role") }}</small></span>
         </div>
 
-        <a class="logout-link ms-lg-2" href="/logout">
-            <i class="bi bi-box-arrow-right"></i>
-            <span>Odjava</span>
-        </a>
+        <form method="POST" action="/logout" class="d-inline ms-lg-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="logout-link btn btn-link p-0 text-decoration-none" style="display:inline-flex; align-items:center; gap:0.35rem;">
+                <i class="bi bi-box-arrow-right"></i>
+                <span>Odjava</span>
+            </button>
+        </form>
       </div>
     </div>
   </div>
 </nav>
 {% endif %}
 
-{% if request.path in ['/login', '/register'] %}
+{% if request.path == '/login' %}
 <button class="theme-toggle auth-theme-toggle" onclick="toggleDarkMode()" id="themeBtn" type="button" aria-label="Promeni temu">
     <i class="bi bi-moon"></i>
 </button>
 {% endif %}
 
-<main class="{% if request.path in ['/login', '/register'] %}auth-container{% else %}container-fluid app-content fade-in{% endif %}">
+<main class="{% if request.path == '/login' %}auth-container{% else %}container-fluid app-content fade-in{% endif %}">
     {% block content %}{% endblock %}
 </main>
 
