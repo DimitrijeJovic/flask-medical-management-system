@@ -54,7 +54,7 @@ The application strictly separates responsibilities across three distinct staff 
 - **Database Connector:** `mysql-connector-python` using parameterized queries exclusively
 - **Frontend & Styling:** Jinja2 dynamic templates, HTML5, CSS3, Bootstrap 5, Bootstrap Icons
 - **Production Entrypoint:** WSGI (`wsgi.py`) with Gunicorn support and configurable ProxyFix
-- **Testing Suite:** Python `unittest` suite (38 automated regression and security invariant tests)
+- **Testing Suite:** Python `unittest` suite (48 automated regression, security invariant, and real MySQL concurrency tests)
 
 ---
 
@@ -187,27 +187,46 @@ gunicorn wsgi:app --workers 4 --bind 127.0.0.1:5000
 
 ## 9. Running Tests
 
-Run the complete automated regression and security test suite:
+Run the complete automated test discovery (all 48 tests):
 ```bash
-python -m unittest tests.test_app
+python -m unittest discover -s tests -p "test_*.py"
 ```
 
-**Test Coverage Summary (38 Tests Passing):**
-- Account creation & public registration decommissioning.
-- Role-based access control for Admin, Doctor, and Nurse.
-- EMR relationship-based access control and patient directory scoping.
-- Appointment ownership validation and terminal cancellation enforcement.
-- Hard delete prevention across all roles and cascade deletion guards.
-- Database session revalidation and demotion/deletion revocation.
-- Row-locking (`FOR UPDATE`) in appointment mutations.
-- CSRF validation, WSGI startup secrets, and logging privacy.
+### Test Suites:
+
+1. **Unit & Security Regression Suite (`tests/test_app.py` — 38 Tests):**
+   ```bash
+   python -m unittest tests.test_app
+   ```
+   - Account creation & public registration decommissioning.
+   - Role-based access control for Admin, Doctor, and Nurse.
+   - EMR relationship-based access control and patient directory scoping.
+   - Appointment ownership validation and terminal cancellation enforcement.
+   - Hard delete prevention across all roles and cascade deletion guards.
+   - Database session revalidation and demotion/deletion revocation.
+   - Row-locking (`FOR UPDATE`) in appointment mutations.
+   - CSRF validation, WSGI startup secrets, and logging privacy.
+
+2. **Real MySQL Integration & Concurrency Suite (`tests/test_mysql_integration.py` — 10 Tests):**
+   ```bash
+   python -m unittest tests.test_mysql_integration
+   ```
+   - Doctor ownership validation on appointments (403 on unauthorized mutation).
+   - Cancelled appointment terminal status (reopening blocked in database).
+   - Completed appointment immutability (reassignment blocked).
+   - Unauthorized EMR creation rejection and atomic commit validation.
+   - Transaction rollback fidelity (zero residual rows on simulated failure).
+   - Multi-connection row locking (`SELECT ... FOR UPDATE` verified with real InnoDB connection blocking).
+   - Race condition serialization (concurrent attempts cleanly serialized; exactly 1 record created).
+   - Real ReBAC `EXISTS` query execution against live MySQL database rows.
+   - Parent-row deletion safeguards (doctors and patients with clinical records protected).
 
 ---
 
 ## 10. Known Limitations & Production Considerations
 
 1. **In-Memory Rate Limiting:** Flask-Limiter uses `memory://` by default. For multi-process or clustered production deployments, set `RATELIMIT_STORAGE_URI=redis://localhost:6379/0` to enforce rate limits across workers.
-2. **Database Concurrency Isolation:** Application safeguards use `SELECT ... FOR UPDATE` and explicit transactions. Full concurrency guarantees assume the InnoDB storage engine under default `REPEATABLE READ` or `SERIALIZABLE` isolation.
+2. **Database Concurrency Isolation:** Multi-connection row locking (`SELECT ... FOR UPDATE`) and race condition serialization have been positively verified against local MySQL 8.0 Community Server (InnoDB). Production environments should ensure InnoDB default `REPEATABLE READ` or `SERIALIZABLE` isolation.
 3. **Foreign Key DDL vs Application Guard:** The underlying `schema.sql` retains `ON DELETE CASCADE` on historical foreign keys. While application routes strictly prevent cascade triggers by blocking doctor and patient deletions, direct manual SQL executions outside the application would cascade. A future migration to `ON DELETE RESTRICT` is recommended for enterprise setups.
 
 ---
