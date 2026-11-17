@@ -7,7 +7,7 @@
         <h2>Pregledi</h2>
     </div>
 
-    {% if session["role"] == "sestra" %}
+    {% if session["role"] in ["sestra", "admin"] %}
     <a href="/appointments/add" class="btn btn-primary"><i class="bi bi-calendar-plus me-1"></i>Zakazi pregled</a>
     {% endif %}
 </div>
@@ -31,7 +31,7 @@
             <tbody>
                 {% for a in appointments %}
                 <tr>
-                    <td>{{ a.patient_ime }} {{ a.prezime }}</td>
+                    <td>{{ a.patient_ime }} {{ a.patient_prezime or a.prezime }}</td>
                     <td>{{ a.doctor_ime }}</td>
                     <td><span class="text-nowrap">{{ a.datum }}</span></td>
                     <td>
@@ -45,11 +45,11 @@
                     </td>
                     <td>
                         <div class="table-actions">
-                            {% if session["role"] in ["admin","doktor"] %}
+                            {% if session["role"] in ["admin", "sestra"] or (session["role"] == "doktor" and a.doctor_id == session["user_id"]) %}
                             <a class="btn btn-warning btn-sm" href="/appointments/edit/{{a.id}}">Izmeni</a>
                             {% endif %}
 
-                            {% if session["role"] == "doktor" %}
+                            {% if session["role"] == "doktor" and a.doctor_id == session["user_id"] and a.status != "otkazano" %}
                             <a class="btn btn-success btn-sm" href="/medical/add/{{a.id}}">Izvestaj</a>
                             {% endif %}
                         </div>

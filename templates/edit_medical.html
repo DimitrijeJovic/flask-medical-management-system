@@ -10,6 +10,7 @@
 
 <div class="form-panel">
     <form method="POST" class="form-stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div>
             <label class="form-label">Dijagnoza</label>
             <textarea class="form-control" name="dijagnoza" rows="5" required>{{ record.dijagnoza }}</textarea>
@@ -17,12 +18,12 @@
 
         <div>
             <label class="form-label">Terapija</label>
-            <textarea class="form-control" name="terapija" rows="5" required>{{ record.terapija }}</textarea>
+            <textarea class="form-control" name="terapija" rows="5">{{ record.terapija }}</textarea>
         </div>
 
         <div class="form-actions">
             <a href="/medical/{{ record.patient_id }}" class="btn btn-outline-primary">Nazad</a>
-            <button class="btn btn-primary">Sacuvaj izmene</button>
+            <button class="btn btn-primary" type="submit">Sacuvaj izmene</button>
         </div>
     </form>
 </div>

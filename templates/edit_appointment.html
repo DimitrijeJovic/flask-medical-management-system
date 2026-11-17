@@ -10,24 +10,36 @@
 
 <div class="form-panel">
     <form method="POST" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div>
-            <label class="form-label">Datum</label>
+            <label class="form-label">Datum i vreme</label>
             <input type="datetime-local" name="datum" class="form-control"
-                   value="{{ appointment.datum|replace(' ', 'T') }}">
+                   value="{{ appointment.datum|replace(' ', 'T') }}" required>
         </div>
 
         <div>
             <label class="form-label">Status</label>
-            <select name="status" class="form-select">
+            <select name="status" class="form-select" required>
                 <option value="zakazano" {% if appointment.status == "zakazano" %}selected{% endif %}>Zakazano</option>
                 <option value="zavrseno" {% if appointment.status == "zavrseno" %}selected{% endif %}>Zavrseno</option>
                 <option value="otkazano" {% if appointment.status == "otkazano" %}selected{% endif %}>Otkazano</option>
             </select>
         </div>
 
+        {% if session["role"] in ["admin", "sestra"] %}
+        <div class="form-grid-wide">
+            <label class="form-label">Dodeljeni lekar</label>
+            <select name="doctor_id" class="form-select">
+                {% for d in doctors %}
+                <option value="{{ d.id }}" {% if d.id == appointment.doctor_id %}selected{% endif %}>{{ d.ime }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+
         <div class="form-actions">
             <a href="/appointments" class="btn btn-outline-primary">Nazad</a>
-            <button class="btn btn-primary">Sacuvaj</button>
+            <button class="btn btn-primary" type="submit">Sacuvaj</button>
         </div>
     </form>
 </div>

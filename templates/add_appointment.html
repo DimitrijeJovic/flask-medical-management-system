@@ -10,9 +10,11 @@
 
 <div class="form-panel">
     <form method="POST" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div>
             <label class="form-label">Pacijent</label>
-            <select class="form-select" name="patient_id">
+            <select class="form-select" name="patient_id" required>
+            <option value="">Izaberite pacijenta</option>
             {% for p in patients %}
             <option value="{{p.id}}">{{p.ime}} {{p.prezime}}</option>
             {% endfor %}
@@ -21,7 +23,8 @@
 
         <div>
             <label class="form-label">Doktor</label>
-            <select class="form-select" name="doctor_id">
+            <select class="form-select" name="doctor_id" required>
+            <option value="">Izaberite lekara</option>
             {% for d in doctors %}
             <option value="{{d.id}}">{{d.ime}}</option>
             {% endfor %}
@@ -35,7 +38,7 @@
 
         <div class="form-actions">
             <a href="/appointments" class="btn btn-outline-primary">Nazad</a>
-            <button class="btn btn-primary">Zakazi</button>
+            <button class="btn btn-primary" type="submit">Zakazi</button>
         </div>
     </form>
 </div>

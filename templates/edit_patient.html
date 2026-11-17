@@ -10,22 +10,27 @@
 
 <div class="form-panel">
     <form method="POST" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div>
             <label class="form-label">Ime</label>
-            <input class="form-control" name="ime" value="{{patient.ime}}">
+            <input class="form-control" name="ime" value="{{patient.ime}}" required>
         </div>
         <div>
             <label class="form-label">Prezime</label>
-            <input class="form-control" name="prezime" value="{{patient.prezime}}">
+            <input class="form-control" name="prezime" value="{{patient.prezime}}" required>
         </div>
-        <div class="form-grid-wide">
+        <div>
+            <label class="form-label">JMBG</label>
+            <input class="form-control" name="jmbg" value="{{patient.jmbg}}" maxlength="13" required>
+        </div>
+        <div>
             <label class="form-label">Telefon</label>
             <input class="form-control" name="telefon" value="{{patient.telefon}}">
         </div>
 
         <div class="form-actions">
             <a href="/patients" class="btn btn-outline-primary">Nazad</a>
-            <button class="btn btn-primary">Sacuvaj</button>
+            <button class="btn btn-primary" type="submit">Sacuvaj</button>
         </div>
     </form>
 </div>

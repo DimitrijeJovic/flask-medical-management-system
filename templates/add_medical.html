@@ -10,9 +10,10 @@
 
 <div class="form-panel">
     <form method="POST" class="form-stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div>
             <label class="form-label">Dijagnoza</label>
-            <textarea class="form-control" name="dijagnoza" rows="5" placeholder="Unesite dijagnozu"></textarea>
+            <textarea class="form-control" name="dijagnoza" rows="5" placeholder="Unesite dijagnozu" required></textarea>
         </div>
 
         <div>
@@ -22,7 +23,7 @@
 
         <div class="form-actions">
             <a href="/appointments" class="btn btn-outline-primary">Nazad</a>
-            <button class="btn btn-primary">Sacuvaj</button>
+            <button class="btn btn-primary" type="submit">Sacuvaj</button>
         </div>
     </form>
 </div>

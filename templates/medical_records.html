@@ -83,14 +83,9 @@
                     </div>
                 </div>
 
-                {% if (session["role"] == "doktor" and r.doctor_id == session["user_id"]) or session["role"] == "admin" %}
+                {% if session["role"] == "doktor" and r.doctor_id == session["user_id"] %}
                 <div class="report-actions">
                     <a class="btn btn-warning btn-sm" href="/medical/edit/{{r.id}}">Izmeni izvestaj</a>
-                    <a class="btn btn-danger btn-sm"
-                       href="/medical/delete/{{r.id}}"
-                       onclick="return confirm('Obrisati izvestaj?')">
-                       Obrisi
-                    </a>
                 </div>
                 {% endif %}
             </article>
