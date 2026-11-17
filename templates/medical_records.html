@@ -83,13 +83,9 @@
                     </div>
                 </div>
 
-                {% if (session["role"] == "doktor" and r.doctor_id == session["user_id"]) or session["role"] == "admin" %}
+                {% if session["role"] == "doktor" and r.doctor_id == session["user_id"] %}
                 <div class="report-actions">
                     <a class="btn btn-warning btn-sm" href="/medical/edit/{{r.id}}">Izmeni izvestaj</a>
-                    <form method="POST" action="/medical/delete/{{r.id}}" style="display:inline;" onsubmit="return confirm('Da li ste sigurni da želite da obrišete ovaj izveštaj?');">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit" class="btn btn-danger btn-sm">Obrisi</button>
-                    </form>
                 </div>
                 {% endif %}
             </article>

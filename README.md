@@ -1,87 +1,92 @@
 # Healthcare Management System (Dom Zdravlja)
 
-A secure, role-based healthcare and outpatient clinic management web application built with Python, Flask, MySQL, and Bootstrap 5.
+A secure, role-based outpatient healthcare and clinical management web application built with Python, Flask, MySQL, and Bootstrap 5.
 
-This project was my first software development project, created to explore full-stack web architecture, server-rendered dynamic templates, relational database modeling, role-based access control, and robust application security hardening.
-
----
-
-## Overview & Scope
-
-The application manages day-to-day administrative and outpatient workflows in a medical center. It provides dedicated views and role-restricted actions for three types of clinic staff:
-
-- **Administrator:** System oversight, staff directory management, and user lifecycle administration.
-- **Doctor (`doktor`):** Outpatient queue review, electronic medical record (EMR) documentation, diagnosis and therapy entry, and consultation status updates.
-- **Nurse (`sestra`):** Patient intake registration, identity validation, appointment scheduling, and consultation status tracking.
+Developed to demonstrate enterprise-grade web development patterns: relational database modeling, role-based and relationship-based access control (RBAC & ReBAC), application-level cascade deletion safeguards, longitudinal medical record retention, server-side session invalidation, and defensive security hardening against OWASP Top 10 vulnerabilities.
 
 ---
 
-## Security Architecture & Hardening
+## 1. Problem Statement
 
-The application incorporates enterprise-grade security controls aligned with OWASP Top 10 guidelines:
+Outpatient health centers and primary care clinics require strict compartmentalization of administrative, medical, and nursing functions. Unrestricted record access or accidental administrative deletions can lead to severe privacy breaches or irreversible clinical data loss.
+
+This system provides a centralized clinical workflow portal ensuring:
+- Medical history cannot be permanently deleted by any user or administrator.
+- Clinical notes are accessible exclusively to doctors with an active or historical professional relationship with the patient.
+- Administrative operations cannot alter diagnostic findings or compromise relational integrity.
+- Real-time session validation prevents privilege persistence after role demotion or account deletion.
+
+---
+
+## 2. Main Application Features
+
+- **Clinical Queue Management:** Real-time scheduling, tracking, and status progression of patient appointments (`zakazano` $\rightarrow$ `zavrseno` or `otkazano`).
+- **Electronic Medical Records (EMR):** Structured diagnostic reports and therapy entries authored directly during outpatient consultations.
+- **Terminal Status Auditing:** Cancelled appointments remain permanent historical records and cannot be reopened or manipulated.
+- **Scoped Patient Directory:** Context-sensitive patient search preventing unauthorized bulk patient enumeration or identity data exposure.
+- **Fail-Closed Administration:** Protected staff user provisioning, department assignments, and interactive CLI bootstrap.
+
+---
+
+## 3. User Roles & Permission Matrix
+
+The application strictly separates responsibilities across three distinct staff roles:
+
+| Capability / Route | Administrator (`admin`) | Doctor (`doktor`) | Nurse (`sestra`) |
+|---|---|---|---|
+| Staff Management (`/users`, `/users/add`) | Full CRUD (excluding hard deletes of doctors with records) | Forbidden (403) | Forbidden (403) |
+| Patient Directory (`/patients`) | Full View & Search (All Patients) | Scoped View (Active appointments or authored records) | Full View & Search (All Patients) |
+| Patient Creation & Demographics (`/patients/add`) | Allowed | Forbidden (403) | Allowed |
+| Appointment Scheduling (`/appointments/add`) | Allowed | Forbidden (403) | Allowed |
+| Appointment Consultation & Updates (`/appointments/edit`) | Allowed (Pending reassignments) | Own Appointments Only (Cannot reassign or reopen) | Allowed (Pending reassignments) |
+| EMR History Read (`/medical/<patient_id>`) | Global READ-Only (Audit / Oversight) | Relationship-Only (Eligible appointment or authored record) | Forbidden (403) |
+| EMR Report Creation (`/medical/add/<appointment_id>`) | Forbidden (403) | Assigned Doctor Only (Terminal appointments excluded) | Forbidden (403) |
+| EMR Report Edit (`/medical/edit/<record_id>`) | Forbidden (403) | Authoring Doctor Only | Forbidden (403) |
+| EMR Report Deletion (`/medical/delete/<record_id>`) | **Permanently Forbidden (403)** | **Permanently Forbidden (403)** | **Permanently Forbidden (403)** |
+
+---
+
+## 4. Technology Stack
+
+- **Backend Framework:** Python 3.10+, Flask 3.1, Werkzeug
+- **Security & Integrity:** Flask-WTF (CSRF tokens on all POST requests), Flask-Limiter (Rate limiting)
+- **Database & Engine:** MySQL 8.0 (InnoDB storage engine, foreign key constraints)
+- **Database Connector:** `mysql-connector-python` using parameterized queries exclusively
+- **Frontend & Styling:** Jinja2 dynamic templates, HTML5, CSS3, Bootstrap 5, Bootstrap Icons
+- **Production Entrypoint:** WSGI (`wsgi.py`) with Gunicorn support and configurable ProxyFix
+- **Testing Suite:** Python `unittest` suite (38 automated regression and security invariant tests)
+
+---
+
+## 5. Security Architecture & Hardening
 
 ### Authentication & Account Lifecycle
-- **Decommissioned Public Registration:** Anonymous registration endpoints are completely disabled. Only authenticated administrators can create staff accounts at `/users/add`.
-- **Fail-Closed Bootstrap:** Initial administrator creation is securely performed via an interactive, fail-closed CLI command (`flask create-admin`) with hidden password input.
-- **Password Security:** Scrypt password hashing via Werkzeug security primitives with unique salts.
-- **Flask View Decorators:** Standard `@wraps` view decorators (`@login_required`, `@role_required`) protecting all internal endpoints.
+- **Decommissioned Public Registration:** Public self-registration is eliminated; `/register` returns HTTP 404.
+- **Fail-Closed CLI Bootstrap:** Initial administrator account is provisioned via `flask create-admin`, enforcing non-empty passwords and unique emails.
+- **Password Protection:** Cryptographic hashing via Werkzeug security primitives (Scrypt / PBKDF2) with per-user salt generation.
+- **Server-Side Session Revocation:** Every authenticated request queries the database via `@app.before_request` to verify user existence and role consistency. Demoted or deleted staff lose session access immediately (`session.clear()`).
 
-### Granular Authorization & Medical Record Integrity
-- **Role-Based Access Control:** Nurses and unauthenticated users receive HTTP 403 when requesting clinical records.
-- **Relationship-Based EMR Access:** Doctors may access a patient's medical history only if an active/completed appointment exists or if the doctor authored historical clinical records for that patient. Cancelled appointments (`otkazano`) explicitly do not grant access.
-- **Creation Integrity:** Diagnostic reports can only be added by the assigned doctor for their own appointments. Patient IDs are derived strictly from the database appointment record, preventing IDOR/parameter tampering.
+### Relationship-Based Clinical Authorization
+- **Doctor-Patient Access Policy:** Doctors see only patients where an appointment with status `zakazano` or `zavrseno` exists, or where the doctor authored an existing medical report. Cancelled appointments (`otkazano`) never establish access.
+- **Parameter Tampering Prevention (IDOR):** In `/medical/add/<appointment_id>`, the patient ID is derived directly from the verified database appointment, ignoring client-supplied form values.
+- **Strict Role Assignment:** Reassigning appointments requires validating that the target user ID holds the database role `doktor`.
 
-### Database Integrity & Cascade Protection
-- **Application-Level Deletion Guards:** Because database foreign keys use `ON DELETE CASCADE`, application-level transaction checks block deleting doctors or patients who have associated appointments or clinical records, preserving medical history.
-- **Concurrency & Row Locking:** Deletion routines utilize explicit transactions and parent-row locking (`SELECT ... FOR UPDATE`) to eliminate race conditions with concurrent appointment bookings.
+### Medical Record Retention & Cascade Protection
+- **Permanent Hard-Delete Elimination:** No route executes `DELETE FROM medical_records`. All deletion endpoints return HTTP 403, and deletion buttons are removed from the UI.
+- **Cascade Deletion Guards:** Because foreign keys use `ON DELETE CASCADE` at the schema level, application-level transactions with row-level locks (`SELECT ... FOR UPDATE`) block the deletion of any doctor or patient who has historical appointments or medical records.
+- **Terminal Appointment State:** Cancelled appointments cannot be changed back to scheduled or completed status. Completed appointments represent permanent clinical events and cannot be reassigned.
 
-### HTTP Method Safety & CSRF Protection
-- **POST-Only Destructive Actions:** All deletion operations and session logouts require HTTP POST; direct GET requests return HTTP 405 Method Not Allowed.
-- **Comprehensive CSRF Protection:** All state-changing forms across all templates are protected by `Flask-WTF` CSRF tokens, with dedicated error handling for invalid/expired tokens.
-- **Login Rate Limiting:** Brute-force credential attacks on `/login` are throttled via `Flask-Limiter`.
-
-### Production Configuration & WSGI Hardening
-- **Validated WSGI Startup:** Production entry point `wsgi.py` strictly verifies that a non-empty, cryptographically secure `SECRET_KEY` is provided before the WSGI server accepts requests.
-- **Exception Sanitization:** Raw database exceptions are masked in user-facing flash notifications and recorded in server diagnostic logs.
+### HTTP Safety, Proxy & Logging Privacy
+- **POST-Only State Changes:** All destructive operations and logout require HTTP POST; GET requests return HTTP 405 Method Not Allowed.
+- **Strict CSRF Enforcement:** CSRF protection is enabled globally via `Flask-WTF`. Missing or invalid tokens return HTTP 400.
+- **Untrusted Reverse Proxy by Default:** `ProxyFix` trusted hops defaults to `0`. `X-Forwarded-For` is ignored unless explicitly configured via `TRUSTED_PROXIES`.
+- **Privacy-Safe Security Logs:** Diagnoses, therapies, session cookies, user passwords, emails, and full national IDs (JMBG) are completely excluded from server log entries.
 
 ---
 
-## Technology Stack
+## 6. Database Architecture
 
-- **Backend:** Python 3, Flask 3.1, Werkzeug
-- **Security:** Flask-WTF (CSRF), Flask-Limiter (Rate Limiting)
-- **Production Server:** WSGI (`wsgi.py`) with Gunicorn support and ProxyFix reverse proxy handling
-- **Database:** MySQL 8.0 (InnoDB engine, foreign key constraints)
-- **Database Access:** `mysql-connector-python` with parameterized prepared statements
-- **Frontend:** Jinja2 server-rendered templates, HTML5, CSS3, Bootstrap 5, Bootstrap Icons
-- **Testing:** Python `unittest` regression test suite with mock isolation and CLI test runner
-
----
-
-## Application Structure
-
-```text
-flask-medical-management-system/
-├── app.py              # Application routes, authorization decorators, and business logic
-├── wsgi.py             # Production WSGI entry point with startup validation
-├── db.py               # Database connection helper with environment variable loading
-├── schema.sql          # Relational schema DDL (5 tables)
-├── requirements.txt    # Pinned Python package dependencies
-├── .env.example        # Template for required environment variables
-├── .gitignore          # Git exclusion rules for virtual environments, secrets, and caches
-├── static/
-│   └── css/
-│       └── style.css   # Custom clinic UI styles, typography, and dark-mode themes
-├── templates/          # Jinja2 templates for dashboards, CRUD views, and auth
-└── tests/
-    └── test_app.py     # Automated security, RBAC, and regression test suite
-```
-
----
-
-## Database Architecture
-
-The schema consists of 5 normalized tables in MySQL 8.0:
+The relational schema comprises 5 normalized tables in MySQL:
 
 ```text
 departments (id, naziv, opis)
@@ -94,78 +99,126 @@ patients ────┴────────┼───< medical_records (i
 (id, ime, prezime, jmbg, telefon)
 ```
 
-- `departments`: Clinical specialties and service units.
-- `users`: Clinical personnel with role attributes (`admin`, `doktor`, `sestra`).
+- `departments`: Specialty units (e.g., General Practice, Pediatrics).
+- `users`: Clinical staff with role identifiers (`admin`, `doktor`, `sestra`).
 - `patients`: Patient demographic directory with unique `jmbg` constraint.
-- `appointments`: Scheduled clinical visits with datetime timestamps and status states (`zakazano`, `zavrseno`, `otkazano`).
-- `medical_records`: Longitudinal clinical consultation notes and prescriptions.
+- `appointments`: Scheduled consultations with status transitions (`zakazano`, `zavrseno`, `otkazano`).
+- `medical_records`: Immutable longitudinal diagnostic entries and prescriptions.
 
 ---
 
-## Installation & Setup
+## 7. Installation & Local Setup
 
 ### 1. Prerequisites
 - Python 3.10+
 - MySQL 8.0+
 
 ### 2. Environment Setup
-Clone the repository and set up a virtual environment:
 ```bash
 git clone https://github.com/DimitrijeJovic/flask-medical-management-system.git
 cd flask-medical-management-system
 
 python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+# Linux/macOS:
+source .venv/bin/activate
+# Windows:
+.\.venv\Scripts\activate
+
 pip install -r requirements.txt
 ```
 
 ### 3. Database Initialization
-Create the database and apply the schema:
+Create the database and apply the initial schema:
 ```bash
 mysql -u root -p -e "CREATE DATABASE dom_zdravlja_v1 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 mysql -u root -p dom_zdravlja_v1 < schema.sql
 ```
 
 ### 4. Configuration
-Copy the example environment configuration and generate a secure secret key:
+Copy the sample environment file:
 ```bash
 cp .env.example .env
 ```
-Generate a secret key:
+Generate a cryptographically strong secret key:
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
-Configure your `.env` with the generated `SECRET_KEY`, database credentials (`DB_USER`, `DB_PASSWORD`), and port.
+Configure your `.env` file:
+```ini
+SECRET_KEY=your_generated_secret_key_here
+FLASK_DEBUG=0
+PORT=5000
 
-### 5. Create Initial Administrator
-Bootstrap the initial administrator account:
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_NAME=dom_zdravlja_v1
+DB_USER=your_db_username
+DB_PASSWORD=your_db_password
+
+TRUSTED_PROXIES=0
+RATELIMIT_STORAGE_URI=memory://
+```
+
+### 5. Create Administrator Account
+Run the interactive setup command:
 ```bash
 flask create-admin
 ```
-Follow the interactive prompts to enter the admin name, email, and password.
+Provide the administrator's name, email, and password.
 
 ---
 
-## Running the Application
+## 8. Running the Application
 
-### Local Development
+### Development Mode
 ```bash
 python app.py
 ```
-Access the application at `http://127.0.0.1:5000`.
+Open `http://127.0.0.1:5000` in your browser.
 
-### Production Deployment (WSGI)
-Run the application using a production WSGI server behind a reverse proxy (e.g., Nginx):
+### Production WSGI Mode
+Run using a WSGI server (e.g., Gunicorn on Linux):
 ```bash
 gunicorn wsgi:app --workers 4 --bind 127.0.0.1:5000
 ```
+*Note: `wsgi.py` performs immediate startup validation, terminating execution if `SECRET_KEY` is missing, blank, or set to an insecure default.*
 
 ---
 
-## Running Tests
+## 9. Running Tests
 
-Execute the automated test suite:
+Run the complete automated regression and security test suite:
 ```bash
 python -m unittest tests.test_app
 ```
-The test suite covers public registration decommissioning, RBAC authorization, IDOR boundary protection, destructive HTTP method enforcement, cascade deletion guards, and CSRF error handling.
+
+**Test Coverage Summary (38 Tests Passing):**
+- Account creation & public registration decommissioning.
+- Role-based access control for Admin, Doctor, and Nurse.
+- EMR relationship-based access control and patient directory scoping.
+- Appointment ownership validation and terminal cancellation enforcement.
+- Hard delete prevention across all roles and cascade deletion guards.
+- Database session revalidation and demotion/deletion revocation.
+- Row-locking (`FOR UPDATE`) in appointment mutations.
+- CSRF validation, WSGI startup secrets, and logging privacy.
+
+---
+
+## 10. Known Limitations & Production Considerations
+
+1. **In-Memory Rate Limiting:** Flask-Limiter uses `memory://` by default. For multi-process or clustered production deployments, set `RATELIMIT_STORAGE_URI=redis://localhost:6379/0` to enforce rate limits across workers.
+2. **Database Concurrency Isolation:** Application safeguards use `SELECT ... FOR UPDATE` and explicit transactions. Full concurrency guarantees assume the InnoDB storage engine under default `REPEATABLE READ` or `SERIALIZABLE` isolation.
+3. **Foreign Key DDL vs Application Guard:** The underlying `schema.sql` retains `ON DELETE CASCADE` on historical foreign keys. While application routes strictly prevent cascade triggers by blocking doctor and patient deletions, direct manual SQL executions outside the application would cascade. A future migration to `ON DELETE RESTRICT` is recommended for enterprise setups.
+
+---
+
+## 11. Screenshots
+
+*(Screenshots will be captured and added following staging deployment)*
+
+| View | Description | Placeholder |
+|---|---|---|
+| **Admin Dashboard** | Clinic statistics, department overviews, staff management | `[ Screenshot: Admin Dashboard ]` |
+| **Doctor Consultation Queue** | Assigned patient list, status controls, medical history link | `[ Screenshot: Doctor Queue ]` |
+| **Electronic Medical Record** | Longitudinal consultation notes, diagnoses, and prescriptions | `[ Screenshot: Patient EMR ]` |
+| **Appointment Scheduling** | Nurse booking portal with doctor and patient selection | `[ Screenshot: Scheduling Modal ]` |

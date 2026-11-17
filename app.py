@@ -4,9 +4,10 @@ import logging
 from math import ceil
 from functools import wraps
 
-from flask import Flask, render_template, request, redirect, session, flash, abort
+from flask import Flask, render_template, request, redirect, session, flash, abort, g
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.exceptions import HTTPException
 from flask_wtf.csrf import CSRFProtect, CSRFError
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -23,9 +24,11 @@ security_logger = logging.getLogger("security")
 
 app = Flask(__name__)
 
-# Reverse proxy support (single hop by default, configurable via PROXY_FIX_HOPS)
-proxy_hops = int(os.environ.get("PROXY_FIX_HOPS", "1"))
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=proxy_hops, x_proto=proxy_hops, x_host=proxy_hops)
+# Reverse proxy support: Default trusted proxy hops is 0 (untrusted).
+# Only apply ProxyFix when explicitly configured with positive TRUSTED_PROXIES / PROXY_FIX_HOPS.
+trusted_proxies = int(os.environ.get("TRUSTED_PROXIES", os.environ.get("PROXY_FIX_HOPS", "0")))
+if trusted_proxies > 0:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=trusted_proxies, x_proto=trusted_proxies, x_host=trusted_proxies)
 
 # Secret key configuration: Module import does not raise to preserve test pattern compatibility
 app.secret_key = os.environ.get("SECRET_KEY")
@@ -48,12 +51,53 @@ def handle_csrf_error(e):
     return render_template("error.html", message="CSRF provera nije uspela ili je sesija istekla. Osvežite stranicu."), 400
 
 
+def get_user_by_id(user_id):
+    """
+    Fetches user record from database by ID to verify that the account
+    still exists and determine its current role.
+    """
+    db = get_db_connection()
+    cursor = db.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT id, role FROM users WHERE id = %s", (user_id,))
+        return cursor.fetchone()
+    finally:
+        cursor.close()
+        db.close()
+
+
 @app.before_request
 def validate_runtime_security():
-    # Enforce non-empty SECRET_KEY for all requests unless running in Flask test mode
+    # 1. Enforce non-empty SECRET_KEY for all requests unless running in Flask test mode
     if not app.config.get("TESTING"):
         if not app.secret_key or app.secret_key.strip() == "" or app.secret_key == "sifra":
             raise RuntimeError("FATAL SECURITY CONFIGURATION: SECRET_KEY environment variable is missing, empty, or insecure.")
+
+    # 2. Avoid database checks for static assets
+    if request.endpoint == "static" or request.path.startswith("/static"):
+        return
+
+    # 3. Database session validation:
+    # If the request claims authenticated session state, verify against database.
+    if "user_id" in session:
+        try:
+            user = get_user_by_id(session["user_id"])
+            if not user or user.get("role") != session.get("role"):
+                security_logger.warning(
+                    "SESSION_REVOKED user_id=%s session_role=%s db_role=%s ip=%s",
+                    session.get("user_id"),
+                    session.get("role"),
+                    user.get("role") if user else None,
+                    get_remote_address()
+                )
+                session.clear()
+                flash("Sesija je istekla ili je uloga promenjena. Molimo prijavite se ponovo.", "warning")
+                return redirect("/login")
+            g.current_user = user
+        except Exception as e:
+            security_logger.error("Database error during session validation: %s", e)
+            session.clear()
+            abort(500)
 
 
 # =========================================================================
@@ -75,7 +119,8 @@ def role_required(*allowed_roles):
         def decorated_function(*args, **kwargs):
             if "user_id" not in session:
                 return redirect("/login")
-            if session.get("role") not in allowed_roles:
+            current_role = getattr(g, "current_user", {}).get("role") if hasattr(g, "current_user") and g.current_user else session.get("role")
+            if current_role not in allowed_roles:
                 abort(403)
             return f(*args, **kwargs)
         return decorated_function
@@ -377,7 +422,7 @@ def add_user():
             """, (ime, email, generate_password_hash(password), role, department_id))
             db.commit()
 
-            security_logger.info("USER_CREATED admin_id=%s created_email=%s role=%s", session["user_id"], email, role)
+            security_logger.info("USER_CREATED admin_id=%s role=%s", session["user_id"], role)
             flash("Korisnik uspesno kreiran!", "success")
             return redirect("/users")
         except Exception:
@@ -406,8 +451,11 @@ def delete_user(id):
     db = get_db_connection()
     cursor = db.cursor(dictionary=True)
     try:
-        db.start_transaction()
-
+        try:
+            db.start_transaction()
+        except Exception as tex:
+            if "Transaction already in progress" not in str(tex):
+                raise
         # 1. Lock the parent user row
         cursor.execute("SELECT id, role FROM users WHERE id = %s FOR UPDATE", (id,))
         target_user = cursor.fetchone()
@@ -458,36 +506,96 @@ def patients():
     cursor = db.cursor(dictionary=True)
 
     search = request.args.get("search", "").strip()
-    page = max(int(request.args.get("page", 1)), 1)
+    page_param = request.args.get("page", 1)
+    try:
+        page = max(int(page_param), 1)
+    except (ValueError, TypeError):
+        page = 1
     limit = 8
     offset = (page - 1) * limit
 
-    if search:
-        search_term = f"%{search}%"
-        cursor.execute("""
-            SELECT COUNT(*) AS total
-            FROM patients
-            WHERE ime LIKE %s OR prezime LIKE %s OR jmbg LIKE %s
-        """, (search_term, search_term, search_term))
-        total_patients = cursor.fetchone()["total"]
+    is_doctor = session.get("role") == "doktor"
+    doctor_id = session.get("user_id")
 
-        cursor.execute("""
-            SELECT *
-            FROM patients
-            WHERE ime LIKE %s OR prezime LIKE %s OR jmbg LIKE %s
-            ORDER BY prezime, ime
-            LIMIT %s OFFSET %s
-        """, (search_term, search_term, search_term, limit, offset))
+    if is_doctor:
+        # RELATIONSHIP FILTER: Doctor sees ONLY patients with an appointment in ('zakazano', 'zavrseno')
+        # OR where the doctor authored an existing medical record. Excludes 'otkazano'.
+        # JMBG is not selected or searched to prevent unnecessary exposure.
+        rel_condition = """
+            (
+                EXISTS (
+                    SELECT 1 FROM appointments a
+                    WHERE a.patient_id = p.id
+                      AND a.doctor_id = %s
+                      AND a.status IN ('zakazano', 'zavrseno')
+                )
+                OR EXISTS (
+                    SELECT 1 FROM medical_records m
+                    WHERE m.patient_id = p.id
+                      AND m.doctor_id = %s
+                )
+            )
+        """
+        if search:
+            search_term = f"%{search}%"
+            cursor.execute(f"""
+                SELECT COUNT(*) AS total
+                FROM patients p
+                WHERE {rel_condition}
+                  AND (p.ime LIKE %s OR p.prezime LIKE %s OR p.telefon LIKE %s)
+            """, (doctor_id, doctor_id, search_term, search_term, search_term))
+            total_patients = cursor.fetchone()["total"]
+
+            cursor.execute(f"""
+                SELECT p.id, p.ime, p.prezime, p.telefon
+                FROM patients p
+                WHERE {rel_condition}
+                  AND (p.ime LIKE %s OR p.prezime LIKE %s OR p.telefon LIKE %s)
+                ORDER BY p.prezime, p.ime
+                LIMIT %s OFFSET %s
+            """, (doctor_id, doctor_id, search_term, search_term, search_term, limit, offset))
+        else:
+            cursor.execute(f"""
+                SELECT COUNT(*) AS total
+                FROM patients p
+                WHERE {rel_condition}
+            """, (doctor_id, doctor_id))
+            total_patients = cursor.fetchone()["total"]
+
+            cursor.execute(f"""
+                SELECT p.id, p.ime, p.prezime, p.telefon
+                FROM patients p
+                WHERE {rel_condition}
+                ORDER BY p.prezime, p.ime
+                LIMIT %s OFFSET %s
+            """, (doctor_id, doctor_id, limit, offset))
     else:
-        cursor.execute("SELECT COUNT(*) AS total FROM patients")
-        total_patients = cursor.fetchone()["total"]
+        if search:
+            search_term = f"%{search}%"
+            cursor.execute("""
+                SELECT COUNT(*) AS total
+                FROM patients
+                WHERE ime LIKE %s OR prezime LIKE %s OR jmbg LIKE %s
+            """, (search_term, search_term, search_term))
+            total_patients = cursor.fetchone()["total"]
 
-        cursor.execute("""
-            SELECT *
-            FROM patients
-            ORDER BY prezime, ime
-            LIMIT %s OFFSET %s
-        """, (limit, offset))
+            cursor.execute("""
+                SELECT *
+                FROM patients
+                WHERE ime LIKE %s OR prezime LIKE %s OR jmbg LIKE %s
+                ORDER BY prezime, ime
+                LIMIT %s OFFSET %s
+            """, (search_term, search_term, search_term, limit, offset))
+        else:
+            cursor.execute("SELECT COUNT(*) AS total FROM patients")
+            total_patients = cursor.fetchone()["total"]
+
+            cursor.execute("""
+                SELECT *
+                FROM patients
+                ORDER BY prezime, ime
+                LIMIT %s OFFSET %s
+            """, (limit, offset))
 
     patient_list = cursor.fetchall()
     total_pages = max(ceil(total_patients / limit), 1)
@@ -532,7 +640,7 @@ def add_patient():
             """, (ime, prezime, jmbg, telefon))
             db.commit()
 
-            security_logger.info("PATIENT_ADDED staff_id=%s jmbg_suffix=%s", session["user_id"], jmbg[-4:])
+            security_logger.info("PATIENT_ADDED staff_id=%s patient_id=%s", session["user_id"], cursor.lastrowid)
             flash("Pacijent uspesno dodat!", "success")
             return redirect("/patients")
         except Exception:
@@ -606,8 +714,11 @@ def delete_patient(id):
     db = get_db_connection()
     cursor = db.cursor(dictionary=True)
     try:
-        db.start_transaction()
-
+        try:
+            db.start_transaction()
+        except Exception as tex:
+            if "Transaction already in progress" not in str(tex):
+                raise
         # 1. Lock the parent patient row
         cursor.execute("SELECT id FROM patients WHERE id = %s FOR UPDATE", (id,))
         patient = cursor.fetchone()
@@ -702,6 +813,15 @@ def add_appointment():
             db.close()
             return redirect("/appointments/add")
 
+        # ROLE INTEGRITY: Assigned doctor must be a valid user with role 'doktor'
+        cursor.execute("SELECT id, role FROM users WHERE id = %s", (doctor_id,))
+        doc_user = cursor.fetchone()
+        if not doc_user or doc_user.get("role") != "doktor":
+            flash("Dodeljeni korisnik mora postojati i imati ulogu doktora.", "danger")
+            cursor.close()
+            db.close()
+            return redirect("/appointments/add")
+
         try:
             cursor.execute("""
                 INSERT INTO appointments (patient_id, doctor_id, datum, status)
@@ -769,13 +889,56 @@ def edit_appointment(id):
             db.close()
             return redirect(f"/appointments/edit/{id}")
 
-        # DOCTOR RESTRICTION: Doctors cannot reassign doctor_id or patient_id
-        if session["role"] == "doktor":
-            new_doctor_id = appointment["doctor_id"]
-        else:
-            new_doctor_id = request.form.get("doctor_id", appointment["doctor_id"])
-
         try:
+            try:
+                db.start_transaction()
+            except Exception as tex:
+                if "Transaction already in progress" not in str(tex):
+                    raise
+            cursor.execute("SELECT * FROM appointments WHERE id = %s FOR UPDATE", (id,))
+            locked_appointment = cursor.fetchone()
+
+            if not locked_appointment:
+                db.rollback()
+                flash("Pregled nije pronadjen.", "danger")
+                return redirect("/appointments")
+
+            # Ownership check on the locked row for doctor
+            if session["role"] == "doktor" and locked_appointment["doctor_id"] != session["user_id"]:
+                db.rollback()
+                abort(403)
+
+            # TERMINAL STATUS INVARIANT: Cancelled appointments are terminal and must never be reopened
+            if locked_appointment.get("status") == "otkazano":
+                db.rollback()
+                flash("Otkazani pregled je trajno arhiviran i ne može se ponovo aktivirati niti menjati.", "danger")
+                return redirect(f"/appointments/edit/{id}")
+
+            # HISTORICAL INTEGRITY: Completed appointments cannot be reassigned to another doctor
+            if locked_appointment.get("status") == "zavrseno":
+                if session["role"] == "doktor":
+                    new_doctor_id = locked_appointment["doctor_id"]
+                else:
+                    form_doctor_id = request.form.get("doctor_id")
+                    if form_doctor_id and str(form_doctor_id) != str(locked_appointment["doctor_id"]):
+                        db.rollback()
+                        flash("Završeni pregled predstavlja istorijski zapis i ne može se preraspodeliti drugom doktoru.", "danger")
+                        return redirect(f"/appointments/edit/{id}")
+                    new_doctor_id = locked_appointment["doctor_id"]
+            else:
+                # DOCTOR RESTRICTION: Doctors cannot reassign doctor_id or patient_id
+                if session["role"] == "doktor":
+                    new_doctor_id = locked_appointment["doctor_id"]
+                else:
+                    new_doctor_id = request.form.get("doctor_id", locked_appointment["doctor_id"])
+                    # ROLE INTEGRITY: Reassigned user must be a valid user with role 'doktor'
+                    cursor.execute("SELECT id, role FROM users WHERE id = %s", (new_doctor_id,))
+                    doc_user = cursor.fetchone()
+                    if not doc_user or doc_user.get("role") != "doktor":
+                        db.rollback()
+                        flash("Dodeljeni korisnik mora postojati i imati ulogu doktora.", "danger")
+                        return redirect(f"/appointments/edit/{id}")
+
             cursor.execute("""
                 UPDATE appointments
                 SET datum = %s, status = %s, doctor_id = %s
@@ -785,6 +948,8 @@ def edit_appointment(id):
 
             flash("Pregled uspesno izmenjen!", "success")
             return redirect("/appointments")
+        except HTTPException:
+            raise
         except Exception:
             db.rollback()
             flash("Došlo je do greške prilikom izmene pregleda.", "danger")
@@ -876,27 +1041,6 @@ def add_medical_record(appointment_id):
     db = get_db_connection()
     cursor = db.cursor(dictionary=True)
 
-    cursor.execute("SELECT * FROM appointments WHERE id = %s", (appointment_id,))
-    appointment = cursor.fetchone()
-
-    if not appointment:
-        cursor.close()
-        db.close()
-        abort(404)
-
-    # DOCTOR OWNERSHIP & STATUS INTEGRITY
-    if appointment["doctor_id"] != session["user_id"]:
-        cursor.close()
-        db.close()
-        security_logger.warning("MEDICAL_RECORD_ADD_DENIED_UNOWNED doctor_id=%s app_id=%s", session["user_id"], appointment_id)
-        abort(403)
-
-    if appointment["status"] == "otkazano":
-        cursor.close()
-        db.close()
-        flash("Nije moguće dodati izveštaj za otkazan pregled.", "danger")
-        return redirect("/appointments")
-
     if request.method == "POST":
         dijagnoza = request.form.get("dijagnoza", "").strip()
         terapija = request.form.get("terapija", "").strip()
@@ -908,8 +1052,29 @@ def add_medical_record(appointment_id):
             return render_template("add_medical.html", appointment_id=appointment_id)
 
         try:
+            try:
+                db.start_transaction()
+            except Exception as tex:
+                if "Transaction already in progress" not in str(tex):
+                    raise
+            cursor.execute("SELECT id, patient_id, doctor_id, status FROM appointments WHERE id = %s FOR UPDATE", (appointment_id,))
+            locked_appointment = cursor.fetchone()
+            if not locked_appointment:
+                db.rollback()
+                abort(404)
+
+            if locked_appointment["doctor_id"] != session["user_id"]:
+                db.rollback()
+                security_logger.warning("MEDICAL_RECORD_ADD_DENIED_UNOWNED doctor_id=%s app_id=%s", session["user_id"], appointment_id)
+                abort(403)
+
+            if locked_appointment["status"] == "otkazano":
+                db.rollback()
+                flash("Nije moguće dodati izveštaj za otkazan pregled.", "danger")
+                return redirect("/appointments")
+
             # ZERO TRUST: patient_id is derived exclusively from the verified appointment in DB
-            verified_patient_id = appointment["patient_id"]
+            verified_patient_id = locked_appointment["patient_id"]
             author_doctor_id = session["user_id"]
 
             cursor.execute("""
@@ -927,6 +1092,8 @@ def add_medical_record(appointment_id):
             security_logger.info("MEDICAL_RECORD_CREATED doctor_id=%s patient_id=%s app_id=%s", author_doctor_id, verified_patient_id, appointment_id)
             flash("Izvestaj uspesno dodat!", "success")
             return redirect("/appointments")
+        except HTTPException:
+            raise
         except Exception:
             db.rollback()
             flash("Došlo je do greške prilikom unosa izveštaja.", "danger")
@@ -935,13 +1102,31 @@ def add_medical_record(appointment_id):
             cursor.close()
             db.close()
 
-    cursor.close()
-    db.close()
-    return render_template("add_medical.html", appointment_id=appointment_id)
+    # GET request
+    try:
+        cursor.execute("SELECT * FROM appointments WHERE id = %s", (appointment_id,))
+        appointment = cursor.fetchone()
+
+        if not appointment:
+            abort(404)
+
+        # DOCTOR OWNERSHIP & STATUS INTEGRITY
+        if appointment["doctor_id"] != session["user_id"]:
+            security_logger.warning("MEDICAL_RECORD_ADD_DENIED_UNOWNED doctor_id=%s app_id=%s", session["user_id"], appointment_id)
+            abort(403)
+
+        if appointment["status"] == "otkazano":
+            flash("Nije moguće dodati izveštaj za otkazan pregled.", "danger")
+            return redirect("/appointments")
+
+        return render_template("add_medical.html", appointment_id=appointment_id)
+    finally:
+        cursor.close()
+        db.close()
 
 
 @app.route("/medical/edit/<int:id>", methods=["GET", "POST"])
-@role_required("doktor", "admin")
+@role_required("doktor")
 def edit_medical_record(id):
     db = get_db_connection()
     cursor = db.cursor(dictionary=True)
@@ -952,8 +1137,8 @@ def edit_medical_record(id):
         if not record:
             abort(404)
 
-        # DOCTOR OWNERSHIP: Doctors can only edit their own authored reports
-        if session.get("role") != "admin" and record.get("doctor_id") != session.get("user_id"):
+        # DOCTOR OWNERSHIP: Doctors can only edit their own authored reports. Admin has no edit permission.
+        if record.get("doctor_id") != session.get("user_id"):
             abort(403)
 
         if request.method == "POST":
@@ -982,30 +1167,14 @@ def edit_medical_record(id):
 
 
 @app.route("/medical/delete/<int:id>", methods=["POST"])
-@role_required("doktor", "admin")
+@role_required("admin", "doktor", "sestra")
 def delete_medical_record(id):
-    db = get_db_connection()
-    cursor = db.cursor(dictionary=True)
-    try:
-        cursor.execute("SELECT * FROM medical_records WHERE id = %s", (id,))
-        record = cursor.fetchone()
-
-        if not record:
-            abort(404)
-
-        # DOCTOR OWNERSHIP: Doctor can only delete their own record
-        if session.get("role") != "admin" and record.get("doctor_id") != session.get("user_id"):
-            abort(403)
-
-        cursor.execute("DELETE FROM medical_records WHERE id = %s", (id,))
-        db.commit()
-
-        security_logger.info("MEDICAL_RECORD_DELETED actor_id=%s record_id=%s", session["user_id"], id)
-        flash("Izvestaj obrisan!", "warning")
-        return redirect(f"/medical/{record['patient_id']}")
-    finally:
-        cursor.close()
-        db.close()
+    # BUSINESS INVARIANT: Medical records must NEVER be permanently deleted through the application by any role.
+    security_logger.warning(
+        "MEDICAL_RECORD_DELETE_BLOCKED actor_id=%s role=%s record_id=%s",
+        session.get("user_id"), session.get("role"), id
+    )
+    abort(403)
 
 
 # =========================================================================
